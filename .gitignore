@@ -1,5 +1,6 @@
 bin/*
+docs/*
 obj/*
+scripts/*
 tests/bin/*
 tests/obj/*
-scripts
