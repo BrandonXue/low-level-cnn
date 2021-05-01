@@ -29,7 +29,7 @@
 # |  |-- <test_header2>.cu
 # |  `-- (other tests)...
 # |
-# |--libs
+# |--lib
 # |  `-- (external dependency headers)...
 # |
 # |--<OBJ_DIR>
@@ -42,7 +42,7 @@
 
 # Source file names without extension of where main functions are.
 MAIN_NAME=main
-TEST_MAIN_NAME=catch_tests
+TEST_MAIN_NAME=catch_main
 
 # Output executable file names
 TARGET_NAME=479_proj_2
@@ -83,16 +83,18 @@ tests: $(TEST_TARGET)
 
 clean: $(BIN_DIR)
 ifneq ($(wildcard $(BIN_DIR)/*), )
-	rm $(BIN_DIR)/*
+	@rm $(BIN_DIR)/*
 endif
 ifneq ($(wildcard $(OBJ_DIR)/*), )
-	rm $(OBJ_DIR)/*
+	@rm $(OBJ_DIR)/*
 endif
 ifneq ($(wildcard $(TEST_BIN_DIR)/*), )
-	rm $(TEST_BIN_DIR)/*
+	@rm $(TEST_BIN_DIR)/*
 endif
+# For catch.hpp usage specifically, do not rm the object file with catch's
+# main function. It takes a while to compile
 ifneq ($(wildcard $(TEST_OBJ_DIR)/*), )
-	find ./$(TEST_OBJ_DIR) ! -name "$(TEST_MAIN_NAME).o" -exec rm {} +
+	@find ./$(TEST_OBJ_DIR) ! -name "$(TEST_MAIN_NAME).o" -type f -exec rm {} +
 endif
 
 
@@ -108,16 +110,16 @@ run-tests: $(TEST_TARGET)
 # Directories =================================================================
 
 $(BIN_DIR):
-	mkdir $(BIN_DIR)
+	@mkdir $(BIN_DIR)
 
 $(OBJ_DIR):
-	mkdir $(OBJ_DIR)
+	@mkdir $(OBJ_DIR)
 
 $(TEST_BIN_DIR):
-	mkdir $(TEST_BIN_DIR)
+	@mkdir $(TEST_BIN_DIR)
 
 $(TEST_OBJ_DIR):
-	mkdir $(TEST_OBJ_DIR)
+	@mkdir $(TEST_OBJ_DIR)
 
 # Other targets ===============================================================
 
@@ -130,5 +132,7 @@ $(TARGET): $(OBJ_DIR) $(OBJS) $(BIN_DIR)
 $(TEST_OBJ_DIR)/%.o: $(TEST_DIR)/%.cu
 	$(CC) $(NVCC_FLAGS) $< -c -o $@
 
+# For catch.hpp usage specifically, exclude the object file with the main function.
+# catch.hpp will define its own main function.
 $(TEST_TARGET): $(TEST_OBJ_DIR) $(filter-out $(MAIN_OBJ),$(OBJS)) $(TEST_OBJS) $(TEST_BIN_DIR)
-	$(CC) $(NVCC_FLAGS) $(word 2,$^) $(TEST_OBJS) -o $@
+	$(CC) $(NVCC_FLAGS) $(filter-out $(MAIN_OBJ),$(OBJS)) $(TEST_OBJS) -o $@
