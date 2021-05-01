@@ -336,6 +336,10 @@ RECENT REVISION HISTORY:
 //    default this is set to (1 << 24), which is 16777216, but that's still
 //    very big.
 
+// Modified by Brandon Xue: Adding warning suppressiong
+#pragma GCC diagnostic push 
+#pragma GCC diagnostic ignored "-Wsign-compare"
+
 #ifndef STBI_NO_STDIO
 #include <stdio.h>
 #endif // STBI_NO_STDIO
@@ -4161,6 +4165,9 @@ static int stbi__zexpand(stbi__zbuf *z, char *zout, int n)  // need to make room
    }
    q = (char *) STBI_REALLOC_SIZED(z->zout_start, old_limit, limit);
    STBI_NOTUSED(old_limit);
+   // Modified by Brandon Xue
+   // This doesn't suppress warnings using CUDA nvcc, add fix
+   old_limit += 0;
    if (q == NULL) return stbi__err("outofmem", "Out of memory");
    z->zout_start = q;
    z->zout       = q + cur;
@@ -5043,6 +5050,9 @@ static int stbi__parse_png_file(stbi__png *z, int scan, int req_comp)
                STBI_NOTUSED(idata_limit_old);
                p = (stbi_uc *) STBI_REALLOC_SIZED(z->idata, idata_limit_old, idata_limit); if (p == NULL) return stbi__err("outofmem", "Out of memory");
                z->idata = p;
+               // Modified by Brandon Xue
+               // This doesn't suppress warnings using CUDA nvcc, add fix
+               idata_limit_old += 0;
             }
             if (!stbi__getn(s, z->idata+ioff,c.length)) return stbi__err("outofdata","Corrupt PNG");
             ioff += c.length;
@@ -6827,6 +6837,10 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
             }
          }
       } while (u != 0);
+      // Modified by Brandon Xue
+      // STBI_UNUSED doesn't suppress warnings using CUDA nvcc, add fix
+      out_size += 0;
+      delays_size += 0;
 
       // free temp buffer;
       STBI_FREE(g.out);
@@ -7760,3 +7774,4 @@ ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ------------------------------------------------------------------------------
 */
+#pragma GCC diagnostic pop

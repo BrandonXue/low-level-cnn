@@ -99,13 +99,13 @@ endif
 
 
 run: $(TARGET)
-	./$(TARGET)
+	@./$(TARGET)
 
 run-test: $(TEST_TARGET)
-	./$(TEST_TARGET)
+	@./$(TEST_TARGET)
 
 run-tests: $(TEST_TARGET)
-	./$(TEST_TARGET)
+	@./$(TEST_TARGET)
 
 # Directories =================================================================
 
@@ -124,13 +124,13 @@ $(TEST_OBJ_DIR):
 # Other targets ===============================================================
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cu
-	$(CC) $(NVCC_FLAGS) $< -c -o $@
+	@$(CC) $(NVCC_FLAGS) $< -c -o $@
 
 $(TARGET): $(OBJ_DIR) $(OBJS) $(BIN_DIR)
 	$(CC) $(NVCC_FLAGS) $(OBJS) -o $(TARGET)
 
 $(TEST_OBJ_DIR)/%.o: $(TEST_DIR)/%.cu
-	$(CC) $(NVCC_FLAGS) $< -c -o $@
+	@$(CC) $(NVCC_FLAGS) $< -c -o $@
 
 # For catch.hpp usage specifically, exclude the object file with the main function.
 # catch.hpp will define its own main function.
