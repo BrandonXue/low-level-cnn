@@ -1,6 +1,13 @@
+// Standard
+#include <locale.h>
+#include <stdio.h>
+#include <wchar.h>
+
+// Third party
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+// Local
 #include "image_io.cu.h"
 
 /**
@@ -60,18 +67,20 @@ unsigned char *load_img_carefully(
  * intensity is.
  */
 __host__
-char int256_to_ascii(int intensity) {
+wchar_t int256_to_unicode(int intensity) {
     if (intensity >= 192)
-        return '#';
+        return (wchar_t)0x2593;
     if (intensity >= 128)
-        return '+';
+        return (wchar_t)0x2592;
     if (intensity >= 64)
-        return '.';
-    return ' ';
+        return (wchar_t)0x2591;
+    return (wchar_t)0x0020;
 }
 
 __host__
 void img_to_ascii(unsigned char *data, int width, int height, int c) {
+    char *locale = setlocale(LC_ALL, "");
+    printf("curr locale: %s\n", locale);
     if (data != NULL && c > 0) {
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
@@ -82,7 +91,7 @@ void img_to_ascii(unsigned char *data, int width, int height, int c) {
                     avg += (int)data[c * (y * width + x) + chn];
                 }
                 avg /= c;
-                printf("%c", int256_to_ascii(avg));
+                printf("%lc", (wchar_t)int256_to_unicode(avg));
             }
             printf("\n");
         }
