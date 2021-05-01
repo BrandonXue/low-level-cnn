@@ -17,6 +17,6 @@ int main(int argc, char *argv[]) {
         "data/chinese_mnist/data/input_1_1_1.jpg",
         64, 64, 1, &status
     );
-    printf("Status: %d.\n", status);
+    img_to_ascii(data, 64, 64, 1);
     return 0;
 }

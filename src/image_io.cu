@@ -19,12 +19,15 @@
  * @return A pointer to the image array, with components interleaved.
  *     Or returns NULL if something went wrong.
  */
+__host__
 unsigned char *load_img_carefully(
     const char* file_path,
     int expect_wid, int expect_hgt, int expect_c,
     int *status
 ) {
+
     int width, height, components;
+
     unsigned char *data = stbi_load(
         file_path, &width, &height, &components, 0
     );
@@ -33,22 +36,57 @@ unsigned char *load_img_carefully(
     *status = 0;
 
     // If fail loading
-    if (!data) {
-        *status = *status & 8;
+    if (data == NULL) {
+        *status |= 8;
     }
     // On load succeed
     else {
         if (expect_wid != width) {
-            *status &= 4;
+            *status |= 4;
         }
         if (expect_hgt != height) {
-            *status &= 2;
+            *status |= 2;
         }
         if (expect_c != components) {
-            *status &= 1;
+            *status |= 1;
         }
     }
     return data;
+}
+
+/**
+ * Convert single-byte numeric intensity into an ASCII character,
+ * where the character chosen is visually darker the higher the
+ * intensity is.
+ */
+__host__
+char int256_to_ascii(int intensity) {
+    if (intensity >= 192)
+        return '#';
+    if (intensity >= 128)
+        return '+';
+    if (intensity >= 64)
+        return '.';
+    return ' ';
+}
+
+__host__
+void img_to_ascii(unsigned char *data, int width, int height, int c) {
+    if (data != NULL && c > 0) {
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                int avg = 0;
+                for (int chn = 0; chn < c; ++chn) {
+                    // y * width + x gives the pixel, multiply it by channels
+                    // add current channel: chn
+                    avg += (int)data[c * (y * width + x) + chn];
+                }
+                avg /= c;
+                printf("%c", int256_to_ascii(avg));
+            }
+            printf("\n");
+        }
+    }
 }
 
 
