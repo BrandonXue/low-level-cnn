@@ -11,32 +11,32 @@
 # |  |--headers
 # |  |  |-- <header1>.cu.h
 # |  |  |-- <header2>.cu.h
-# |  |  `-- (other internal headers)...
+# |  |  `-- (internal headers)...
 # |  |
 # |  |-- <MAIN_NAME>.cu
 # |  |-- <src_file1>.cu
 # |  |-- <src_file2>.cu
-# |  `-- (other internal sources)...
+# |  `-- (internal sources)...
 # |
 # |--<TEST_DIR>
 # |  |--obj
-# |  |  `-- (compiled .o files)...
+# |  |  `-- (test .o outputs)...
 # |  |--bin
-# |  |  `-- (compiled executables)...
+# |  |  `-- (test executable output)...
 # |  |
 # |  |-- <TEST_MAIN_NAME>.cu
 # |  |-- <test_header1>.cu
 # |  |-- <test_header2>.cu
 # |  `-- (other tests)...
 # |
-# |--lib
+# |--external
 # |  `-- (external dependency headers)...
 # |
 # |--<OBJ_DIR>
-# |  `-- (compiled .o files)...
+# |  `-- (main .o outputs)...
 # |
 # `--<BIN_DIR>
-#    `-- (compiled executables)...
+#    `-- (main executable output)...
 
 # Variables ===================================================================
 
@@ -54,7 +54,7 @@ OBJ_DIR = obj
 BIN_DIR = bin
 TEST_DIR = tests
 
-# Test directory names (must exist in TESTDIR)
+# Test directory names
 TEST_OBJ_DIR = $(TEST_DIR)/obj
 TEST_BIN_DIR = $(TEST_DIR)/bin
 
@@ -69,7 +69,7 @@ TEST_TARGET = $(TEST_BIN_DIR)/$(TEST_TARGET_NAME)
 TEST_MAIN_OBJ=$(TEST_OBJ_DIR)/$(TEST_MAIN_NAME).o
 
 CC = nvcc
-NVCC_FLAGS = -Xcompiler -Wall --std=c++14 -Ilib -Isrc/headers
+NVCC_FLAGS = -Xcompiler -Wall --std=c++14 -Iexternal -Isrc/headers
 
 # Phony targets ===============================================================
 
@@ -102,10 +102,10 @@ run: $(TARGET)
 	@./$(TARGET)
 
 run-test: $(TEST_TARGET)
-	@./$(TEST_TARGET)
+	@./$(TEST_TARGET) --success
 
 run-tests: $(TEST_TARGET)
-	@./$(TEST_TARGET)
+	@./$(TEST_TARGET) --success
 
 # Directories =================================================================
 
