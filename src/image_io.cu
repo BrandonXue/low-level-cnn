@@ -5,6 +5,7 @@
 
 // Third party
 #define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_JPEG
 #include "stb_image.h"
 
 // Local
@@ -68,20 +69,65 @@ unsigned char *load_img_carefully(
  */
 __host__
 wchar_t int256_to_unicode(int intensity) {
-    if (intensity >= 192)
-        return (wchar_t)0x2593;
-    if (intensity >= 128)
-        return (wchar_t)0x2592;
-    if (intensity >= 64)
-        return (wchar_t)0x2591;
-    return (wchar_t)0x0020;
+    if (intensity >= 192)   // 256 * 3/4
+        return (wchar_t)0x2593; // dark shade
+    if (intensity >= 128)   // 256 * 2/4
+        return (wchar_t)0x2592; // medium shade
+    if (intensity >= 64)    // 256 * 1/4
+        return (wchar_t)0x2591; // light shade
+                            // 256 * 0/4
+    return (wchar_t)0x0020;     // whitespace
 }
 
 __host__
+char int256_to_ascii(int intensity) {
+    if (intensity >= 204) // 256 * 4/5
+        return '#';
+    if (intensity >= 153) // 256 * 3/5
+        return '*';
+    if (intensity >= 102) // 256 * 2/5
+        return '+';
+    if (intensity >= 51)  // 256 * 1/5
+        return '.';
+    return ' ';
+}
+
+/**
+ * Print 1 channel grayscale or 3 channel RGB image as ASCII art.
+ */
+__host__
 void img_to_ascii(unsigned char *data, int width, int height, int c) {
-    char *locale = setlocale(LC_ALL, "");
-    printf("curr locale: %s\n", locale);
-    if (data != NULL && c > 0) {
+    if (data != NULL && (c == 1 || c == 3)) {
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                int avg = 0;
+                for (int chn = 0; chn < c; ++chn) {
+                    // y * width + x gives the pixel, multiply it by channels
+                    // add current channel: chn
+                    avg += (int)data[c * (y * width + x) + chn];
+                }
+                avg /= c;
+                printf("%c", int256_to_ascii(avg));
+            }
+            printf("\n");
+        }
+    }
+}
+
+/**
+ * Must be called before attempting to print Unicode.
+ */
+__host__
+void set_locale_lc_all() {
+    setlocale(LC_ALL, "");
+}
+
+/**
+ * Print 1 channel grayscale or 3 channel RGB image as Unicode art.
+ */
+__host__
+void img_to_unicode(unsigned char *data, int width, int height, int c) {
+    if (data != NULL && (c == 1 || c == 3)) {
         for (int y = 0; y < height; ++y) {
             for (int x = 0; x < width; ++x) {
                 int avg = 0;
