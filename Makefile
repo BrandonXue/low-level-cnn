@@ -102,10 +102,10 @@ run: $(TARGET)
 	@./$(TARGET)
 
 run-test: $(TEST_TARGET)
-	@./$(TEST_TARGET) --success
+	@./$(TEST_TARGET)
 
 run-tests: $(TEST_TARGET)
-	@./$(TEST_TARGET) --success
+	@./$(TEST_TARGET)
 
 # Directories =================================================================
 
