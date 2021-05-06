@@ -3,6 +3,11 @@
 
 #include <wchar.h>
 
+struct InputLabel {
+    char *input;
+    int label;
+};
+
 __host__
 unsigned char *load_img_carefully(const char*, int, int, int, int*);
 
@@ -20,5 +25,8 @@ wchar_t int256_to_unicode(int);
 
 __host__
 void img_to_unicode(unsigned char*, int, int, int);
+
+__host__
+InputLabel *load_chinese_mnist_info();
 
 #endif

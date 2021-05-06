@@ -1,6 +1,7 @@
 // Standard
 #include <locale.h>
 #include <stdio.h>
+#include <string.h>
 #include <wchar.h>
 
 // Third party
@@ -144,4 +145,83 @@ void img_to_unicode(unsigned char *data, int width, int height, int c) {
     }
 }
 
+__host__
+void copy_until(char *dst, char *src, char stop, int limit) {
+    int i = 0;
+    int len_src = strlen(src);
+    while (i < len_src && i < limit && dst[i] != stop) {
+        src[i] = dst[i];
+    }
+}
 
+/**
+ * The chinese_mnist.csv metadata has the following format:
+ * suite_id,sample_id,code,value,character
+ * where the first line is the header information, and the
+ * subsequent 14999 lines are data.
+ */
+__host__
+InputLabel *load_chinese_mnist_info() {
+    // Open the file that contains data about each ChineseMNIST input and label
+    FILE* fs = fopen("data/chinese_mnist/chinese_mnist.csv", "r");
+    // Create an array of InputLabel which this function will construct
+    InputLabel *info = (InputLabel*)malloc(14999 * sizeof(InputLabel));
+
+    // The files all start with this prefix
+    const char *prefix = "data/chinese_mnist/data/input_";
+    int len_prefix = strlen(prefix);
+
+    // The files all end with this suffix
+    const char *suffix = ".jpg";
+    int len_suffix = strlen(suffix);
+
+    int len_img_file_buf = 64;
+    char csv_line_buf[64];
+    
+    // Skip the header line
+    fgets(csv_line_buf, 63, fs);
+
+    // Iterate over the lines of the csv file
+    int line_index = 0;
+    while (fgets(csv_line_buf, 63, fs)) {
+        // First copy the common file prefix to the file name
+        char *img_file_buf = (char*)malloc(len_img_file_buf * sizeof(char));
+        strncpy(img_file_buf, prefix, len_img_file_buf);
+
+        // Now iterate over the csv line and copy the numbers over
+        int line_len = strlen(csv_line_buf);
+        int comma_count = 0;
+        for (int i = 0; i < line_len; ++i) {
+            // the first three values are part of the input string
+            if (csv_line_buf[i] != ',') {
+                img_file_buf[len_prefix+i] = csv_line_buf[i];
+            } else {
+                ++comma_count;
+
+                // If three commas
+                // append suffix parse the label, create struct, then break
+                if (comma_count == 3) {
+                    strncpy(img_file_buf + len_prefix + i, suffix, len_suffix);
+                    ++i;
+                    // Parse the int type label
+                    char value[32];
+                    int j = i;
+                    while (csv_line_buf[j] != ',') {
+                        value[j - i] = csv_line_buf[j];
+                        ++j;
+                    }
+                    value[j - i] = '\0';
+                    int int_value = atoi(value);
+                    // Create struct for this input entry in the struct array
+                    //printf("input: %s has label %d, as str %s\n", img_file_buf, int_value, value);
+                    info[line_index] = {.input = img_file_buf, .label = int_value};
+                    break;
+                } else {
+                    img_file_buf[len_prefix+i] = '_';
+                }
+            }
+        }
+        ++line_index;
+    }
+    return info;  
+}
