@@ -66,7 +66,7 @@ void cmd_show(Tokens *toks) {
         }
     } 
     else {
-        printf("Error: \"show\" must be used with a sub-command.\n");
+        printf("Error: \"show\" must be used with a valid sub-command.\n");
     }
 }
 
@@ -110,6 +110,7 @@ void interactive_loop() {
         toks = Tokens_destroy(toks);
     }
 }
+
 
 int main(int argc, char *argv[]) {
 
