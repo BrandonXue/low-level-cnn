@@ -1,6 +1,6 @@
 bin/*
 docs/*
 obj/*
-scripts/*
+scripts/preview.sh
 tests/bin/*
 tests/obj/*
