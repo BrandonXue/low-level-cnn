@@ -6,16 +6,42 @@ import numpy as np
 def sigmoid(x):
     '''Sigmoid activation function.'''
 
-    # Experimentally found out that there is overflow if exp(709.9)
-    # Make sure -x is less than 709
-    if x < -709:
-        x = -709
-    return 1 / (1 + math.exp(-x))
+    # Experimentally found out that if x > 709 there is overflow in exp(x)
+    # Make sure -x is no less than -709, so that x is no greater than 709
+
+    clipped_x = np.clip(x, -709, None)
+    return 1 / (1 + np.exp(-clipped_x))
+
+    # scalar version:
+    # if x < -709: x = -709
+    # return 1 / (1 + math.exp(-x))
 
 def deriv_sigmoid(x):
-    '''First derivative of the sigmoid function'''
+    '''First derivative of the sigmoid function.'''
+
     s = sigmoid(x)
     return s * (1 - s)
+
+def relu(x):
+    '''Rectified Linear Unit (ReLU) activation function.'''
+
+    return np.maximum(x, 0)
+
+    # scalar version:
+    # if x > 0:   return x
+    # else:       return 0
+
+def deriv_relu(x):
+    '''First derivative of the ReLU function.'''
+    
+    #                        0   if x1 < 0
+    # heaviside(x1, x2) =   x2   if x1 == 0
+    #                        1   if x1 > 0
+    return np.heaviside(x, 0)
+
+    # scalar version:
+    if x > 0:   return 1
+    else:       return 0
 
 class DenseNode:
     def __init__(self, pred_layer, activation_fn, deriv_activation_fn) -> None:
@@ -31,8 +57,8 @@ class DenseNode:
         ]
         self.grads = [0 for i in range(len(self.pred))]
 
-        self.acf = activation_fn
-        self.deriv_acf = deriv_activation_fn
+        self.activation = activation_fn
+        self.deriv_activation = deriv_activation_fn
 
     def set_pdL_pdOut(self, pdL_pdOut):
         '''
@@ -51,7 +77,7 @@ class DenseNode:
         self.val = 0
         for i in range(len(self.pred)):
             self.val += self.pred[i].out * self.weights[i]
-        self.out = self.acf(self.val)
+        self.out = self.activation(self.val)
 
     #### 2. Calculate pdOut / pdVal
     def calc_pdOut_pdVal(self):
@@ -60,12 +86,12 @@ class DenseNode:
         with respect to its internal value (right before activation)
         '''
 
-        if (self.acf == sigmoid):
+        if (self.activation == sigmoid):
             # Since sigmoid's first derivative is just sigmoid(x) * (1 - sigoid(x)),
             # an efficient shortcut is just to use this neuron's self.out value
             self.pdOut_pdVal = self.out * (1 - self.out)
         else:
-            self.pdOut_pdVal = self.deriv_acf(self.val)
+            self.pdOut_pdVal = self.deriv_activation(self.val)
 
     #### 3. Calculate pdL / pdVal
     def calc_pdL_pdVal(self):
@@ -85,6 +111,8 @@ class DenseNode:
         self.pdL_pdOut = 0
 
     def backprop_delta(self):
+        print(self.pred[0])
+        print("this should be clear: ", self.pred[0].pdL_pdOut)
         for i in range(len(self.pred)):
             # For each predecessor neuron that feeds into this current one
             # Add the change of loss with respect to this node's value
@@ -102,41 +130,155 @@ class DenseNode:
         '''
         Currently uses stochastic gradient descent. 
         '''
-        eta = 0.2
+        eta = 0.5
         for i in range(len(self.weights)):
             self.weights[i] -= eta * self.grads[i]
 
-
 class DenseLayer:
-    def __init__(self, pred_layer, activation_fn, deriv_activation_fn, node_count) -> None:
+    def __init__(self, pred_layer: "DenseLayer", activation_fn, deriv_activation_fn, node_count) -> None:
         self.pred_layer = pred_layer
-        self.nodes = [
-            DenseNode(pred_layer, activation_fn, deriv_activation_fn) for i in range(node_count)
-        ]
+        # self.nodes = [
+        #     DenseNode(pred_layer, activation_fn, deriv_activation_fn) for i in range(node_count)
+        # ]
 
-    def forward(self):
-        for node in self.nodes:
-            node.forward()
+        # Below is used by newer version
+        self.num_nodes = node_count
+        self.weights = np.random.randn(pred_layer.num_nodes, self.num_nodes)
+        print("my weights", self.weights)
+        self.vals = np.empty(self.num_nodes)
+        self.outs = np.empty(self.num_nodes)
+        self.dOut_dVals = np.empty(self.num_nodes)
+        self.activation = activation_fn
+        self.deriv_activation = deriv_activation_fn
+
+    def forward(self, ins):
+        '''\"ins\" should be the outputs (after activation) of the previous layer.'''
+        # Cache the inputs, they will be used to calculate gradients in backpropagation.
+        self.ins = ins
+
+        # Let:  n = number of nodes in the previous layer
+        #       ins = [x1, x2, ..., xn]
+
+        # The dot product ins • weights = a vector of the weighted sums
+        # of each node. i.e. a vector of val = f(w1 in_1 + ... + wn in_n).
+
+        # "ins" is a row vector, and each column of self.weights is a node's
+        # set of weights. The result is a row vector of vals.
+        self.vals = np.dot(ins, self.weights)
+
+        # Apply the activation function φ on each node's weighted sum to get
+        # the pass-forward value of each node. For each node, calculate:
+        # out = φ(val)
+        self.outs = self.activation(self.vals)
+        # self.outs = np.array(
+        #     [self.activation(val) for val in self.vals]
+        # )
+
+        # Cache the derivative of the output value (the value after applying
+        # activation function), with respect to the weighted sum
+        # (the value before applying activation function).
+        # dout / dval = φ'(val)
+        self.dOut_dVals = self.deriv_activation(self.vals)
+        # self.dOut_dVals = np.array(
+        #     [self.deriv_activation(val) for val in self.vals]
+        # )
+
+        # NOTE: This is old code
+        # for node in self.nodes:
+        #     node.forward()
+
+        # Return the pass-forward value
+        return self.outs
 
     def clear_pdL_pdOut(self):
         for node in self.nodes:
             node.clear_pdL_pdOut()
 
-    def backwards(self):
+    def backwards(self, pdL_pdOut):
+        ''' 
+        Perform backpropagation. pdL_pdOut is the change in loss
+        with respect to this layer's outputs. i.e. the output of
+        each node after the activation function is applied.
+        '''
+        
+        # We are given the partial derivative of the Loss with respect to
+        # this layer's outputs: pdL_pdOut = ∂L / ∂out
+
+        # We already cached the derivative of this layer's outputs with
+        # respect to its values before activation: dout/ dval
+
+        # For each node, calculate: ∂L / ∂val = ∂L / ∂out * dout / dval
+        pdL_pdVals = np.multiply(pdL_pdOut, self.dOut_dVals)
+
+        # Now we can compute ∂L / ∂w , (which are the gradients) for each
+        # weight w_i in this layer.
+        # ∂L / ∂w_i  =  ∂L / ∂val * ∂val / ∂w_i  =   ∂L / ∂val * in_i
+        # This is because val = w1 * in_1 + w2 * in_2 + ... + wn in_n
+        # So ∂val / ∂w_i = in_i
+
+        # pdL_pdVals and ins are both row vectors.
+        # We want one column resulting from each value of pdL_pdVals multiplied
+        # by the inputs. i.e. an outer product.
+        # np.outer(a, b) does the following:
+        # [[a0b0 a0b1 ... a0bN]
+        #  [a1b0 a1b1 ... a1bN]
+        #          . . .
+        #  [aMb0 aMb1 ... aMbN]]
+
+        # So that means pdL_pdVals should be the second argument.
+        self.grads = np.outer(self.ins, pdL_pdVals)
+        # print(self.grads)
+        # The result is that each column are the gradients for one node.
+        # This follows the original data format for self.weights, where each
+        # column stores the weights of one node.
+
+        # Now compute the ∂L / ∂out_i for the previous layer. Subscript
+        # "i" will represent values of the previous layer, while "j" will
+        # represent values in the current layer.
+
+        # ∂L / ∂out_i = Σ (∂L / ∂val_j * ∂val_j / ∂out_i)
+        # summation over each node j in this layer.
+        # ∂val_j / ∂out_i is just the weight, because:
+        # val_j = out_i_1 * w_j_1 + out_i_2 * w_j_2
+
+        # This has to be calculated for each out_i of the previous layer.
+        # Let w_x_y denote the y-th weight of node x in the current layer.
+        # Weights should look like this
+        # [[w_1_1  w_2_1  ...  w_3_N],
+        #  [w_1_2  w_2_2  ...  w_3_N],
+        #          . . .
+        #  [w_M_1  w_M_2  ...  w_M_N]]
+
+        # This below will multiply each element in pdL_pdVals element-wise in
+        # each row of self.weights. This means all of column 1's values
+        # will be multiplied by the first element of pdL_pdVals
+        # This makes the sum of each row equal to the change in loss
+        # with respect to the change in output for the previous layer
+        # reduce sum, adding elements of the same row together.
+        pdL_pdOut_pred = np.sum(np.multiply(self.weights, pdL_pdVals), axis = 0)
+
+        # OLD CODE ===================================
         # First calculate some intermediate partial derivatives
-        for node in self.nodes:
-            node.calc_pdOut_pdVal()
-            node.calc_pdL_pdVal()
+        # for node in self.nodes:
+        #     node.calc_pdOut_pdVal()
+        #     node.calc_pdL_pdVal()
 
-        # Clear the previous layer's deltas
-        if not isinstance(self.pred_layer, InputLayer):
-            self.pred_layer.clear_pdL_pdOut()
+        # # Clear the previous layer's deltas
+        # if not isinstance(self.pred_layer, InputLayer):
+        #     self.pred_layer.clear_pdL_pdOut()
 
-        # Backprop deltas and then train this layer's weights
-        for node in self.nodes:
-            node.backprop_delta()
-            node.calc_grad()
-            node.update_params()
+        # # Backprop deltas and then train this layer's weights
+        # for node in self.nodes:
+        #     node.backprop_delta()
+        #     node.calc_grad()
+        #     node.update_params()
+        # END OLD CODE ===================================
+
+        return pdL_pdOut_pred
+
+    def update_params(self, dampening):
+        eta = 0.5 * dampening
+        self.weights = self.weights - eta * self.grads
 
     def set_pdL_pdOut(self, pdL_pdOut):
         for i in range(len(pdL_pdOut)):
@@ -187,10 +329,13 @@ class InputNode:
         self.out = new_data
 
 class InputLayer:
-    def __init__(self, data) -> None:
+    def __init__(self, node_count) -> None:
+        pass
+        # '''Shape should be (width [,height])'''
         # Noramlize inputs
-        data = self.normalize(data)
-        self.nodes = [InputNode(datum) for datum in data]
+        # self.outs = self.normalize(data)
+        self.num_nodes = node_count
+        # self.nodes = [InputNode(datum) for datum in self.outs]
 
     def normalize(self, data):
         dat_max = max(data)
@@ -202,22 +347,27 @@ class InputLayer:
                 data[i] /= dat_range
         return data
 
-    def set_new_data(self, new_data):
-        for i in range(len(self.nodes)):
-            new_data = self.normalize(new_data)
-            self.nodes[i].set_new_data(new_data[i])
+    # def set_new_data(self, new_data):
+        # self.outs = self.normalize(new_data)
+        # for i in range(len(self.nodes)):
+        #     new_data = self.normalize(new_data)
+        #     self.nodes[i].set_new_data(new_data[i])
+
+    def forward(self, ins):
+        return self.normalize(ins)
 
     def print(self, detail = False):
-        print("================================")
-        print("           Input Layer          ")
-        if detail:
-            print("\nData: ")
-            for i in range(len(self.nodes)):
-                end = ', ' if i < len(self.nodes) - 1 else '\n'
-                self.nodes[i].print(end)
-            print()
-        print("Data count:", len(self.nodes))
-        print("================================")
+        pass
+    #     print("================================")
+    #     print("           Input Layer          ")
+    #     if detail:
+    #         print("\nData: ")
+    #         for i in range(len(self.nodes)):
+    #             end = ', ' if i < len(self.nodes) - 1 else '\n'
+    #             self.nodes[i].print(end)
+    #         print()
+    #     print("Data count:", len(self.nodes))
+    #     print("================================")
 
 def mean_squared_error(y_true, y_pred):
     if (len(y_true) != len(y_pred)):
@@ -244,66 +394,121 @@ def deriv_mean_squared_error(y_true, y_pred):
 
 
 # Given [a, b, c, d] as input
-# We want to predict [1, 0, 0, 0]  if  a >= b  c >= d
-# We want to predict [0, 1, 0, 0]  if  a < b   c >= d
-# We want to predict [0, 0, 1, 0]  if  a >= b  c < d
-# We want to predict [0, 0, 0, 1]  if  a < b   c < d
+# We want to predict the following condition:
+# [a && (!b || !c) && !d]
 def generate_input():
-    return [random.randint(0, 9) for i in range(4)]
+    return [random.randint(0, 1) for i in range(4)]
 def generate_y_true(invec):
-    if (invec[0] >= invec[1] and invec[2] >= invec[3]):
-        return [1, 0, 0, 0]
-    if (invec[0] < invec[1] and invec[2] >= invec[3]):
-        return [0, 1, 0, 0]
-    if (invec[0] >= invec[1] and invec[2] < invec[3]):
-        return [0, 0, 1, 0]
-    if (invec[0] < invec[1] and invec[2] < invec[3]):
-        return [0, 0, 0, 1]
+    return [invec[0] and ((not invec[1]) or (not invec[2])) and (not invec[3])]
+    #         (not invec[0]) and invec[1] and invec[2] and invec[3]]
+    # if (invec[0]) and (not invec[1]) and (not invec[2]):
+    #     return [1, 0, 0]
+    # elif (not invec[0]) and (invec[1]) and (not invec[2]):
+    #     return [0, 1, 0]
+    # else:
+    #     return [0, 0, 1]
 
-my_test_case = [4, 5, 4, 1]
-my_test_case_ans = [0, 1, 0, 0]
+my_test_case1 = [0, 1, 0, 1]
+my_test_case_ans1 = [0]
+my_test_case2 = [1, 0, 0, 0]
+my_test_case_ans2 = [1]
+my_test_case3 = [0, 0, 0, 0]
+my_test_case_ans3 = [0]
 
-in_layer = InputLayer([0] * 4)
-hidden_layer1 = DenseLayer(in_layer, sigmoid, deriv_sigmoid, 20)
-hidden_layer2 = DenseLayer(hidden_layer1, sigmoid, deriv_sigmoid, 20)
-out_layer = DenseLayer(hidden_layer2, sigmoid, deriv_sigmoid, 4) # 4 classes
+in_layer = InputLayer(4)
+hidden_layer = DenseLayer(in_layer, sigmoid, deriv_sigmoid, 4)
+out_layer = DenseLayer(hidden_layer, sigmoid, deriv_sigmoid, 1) # 3 nodes
+
+
+# Counters
+total_iters = 0
+iters_this_epoch = 0
+epochs = 0
+
+# Totals
+iters_per_epoch = 1000
+epochs_per_session = 40
+max_iters = iters_per_epoch * epochs_per_session
+
+# Store
+avg_epoch_loss = np.zeros(iters_per_epoch)
+
+def show_only_max(x):
+    is_max = np.array(x.max() == x, dtype = int)
+    is_uniform = True
+    first = is_max[0]
+    for num in is_max:
+        if num != first:
+            is_uniform = False
+    if is_uniform:
+        return np.zeros(is_max.shape)
+    else:
+        return is_max
+
+def run_test():
+    out1 = in_layer.forward(my_test_case1)
+    out2 = hidden_layer.forward(out1)
+    out3 = out_layer.forward(out2)
+    print("Test 1 input:", my_test_case1)
+    print("Test 1 prediction:", out3)
+    print("Test 1 expected:", my_test_case_ans1)
+    print()
+    out1 = in_layer.forward(my_test_case2)
+    out2 = hidden_layer.forward(out1)
+    out3 = out_layer.forward(out2)
+    print("Test 2 input:", my_test_case2)
+    print("Test 2 prediction:", out3)
+    print("Test 2 expected:", my_test_case_ans2)
+    print()
+    out1 = in_layer.forward(my_test_case3)
+    out2 = hidden_layer.forward(out1)
+    out3 = out_layer.forward(out2)
+    print("Test 3 input:", my_test_case3)
+    print("Test 3 prediction:", out3)
+    print("Test 3 expected:", my_test_case_ans3)
+    print()
 
 while True:
-    response = input("Press enter to iterate. Enter q to quit: ").lower()
-    if response == 'q' or response == 'quit':
-        break
+    # response = input("Press enter to iterate. Enter q to quit: ").lower()
+    # if response == 'q' or response == 'quit':
+        # break
 
-    if response == 'p' or response == 'predict':
-        in_layer.set_new_data(my_test_case)
-        hidden_layer1.forward()
-        hidden_layer2.forward()
-        out_layer.forward()
-        print("My test case was", my_test_case)
-        print("Predicted was", out_layer.grab_output())
-        print("Expected answer was", my_test_case_ans)
-        hidden_layer1.print_nums()
-        continue
+    # if response == 'p' or response == 'predict':
+    #     out1 = in_layer.forward(my_test_case)
+    #     out2 = out_layer.forward(out1)
+    #     print("My test case was", my_test_case)
+    #     print("Predicted was", out2)
+    #     print("Expected answer was", my_test_case_ans)
+    #     continue
 
     # Set new training input
     input_x = generate_input()
-    in_layer.set_new_data(input_x)
-    in_layer.print(True)
 
     # feed forward
-    hidden_layer1.forward()
-    hidden_layer1.print_nums()
-    hidden_layer2.forward()
-    out_layer.forward()
+    out1 = in_layer.forward(input_x)
+    out2 = hidden_layer.forward(out1)
+    out3 = out_layer.forward(out2)
 
-    y_pred = out_layer.grab_output()
-    print("The estimate was:", y_pred)
-    y_true = generate_y_true(input_x)
-    curr_mse = mean_squared_error(y_true, y_pred)
-    print("The mse was:", curr_mse)
+    y_true = generate_y_true(out1)
+    curr_mse = mean_squared_error(y_true, out3)
+    avg_epoch_loss[iters_this_epoch] = curr_mse
 
     # backprop
-    deriv_mse = deriv_mean_squared_error(y_true, y_pred)
-    out_layer.set_pdL_pdOut(deriv_mse)
-    out_layer.backwards()
-    hidden_layer2.backwards()
-    hidden_layer1.backwards()
+    back1 = deriv_mean_squared_error(y_true, out3)
+    back2 = out_layer.backwards(back1)
+    back3 = hidden_layer.backwards(back2)
+    out_layer.update_params(float(total_iters) / max_iters)
+    hidden_layer.update_params(float(total_iters) / max_iters)
+
+    total_iters += 1
+    iters_this_epoch += 1
+
+    if iters_this_epoch == iters_per_epoch:
+        iters_this_epoch = 0
+        epochs += 1
+        if epochs % 5 == 0:
+            run_test()
+        print(f"Epoch {epochs} complete. Average loss: {avg_epoch_loss.mean()}.")
+
+    if epochs == epochs_per_session:
+        break
