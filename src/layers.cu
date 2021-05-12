@@ -1,7 +1,8 @@
 #include <stdio.h>
 
 #include "image_io.cu.h"
-#include "conv2d.cu.h"
+#include "layers.cu.h"
+#include "math.cu.h"
 
 /*
 struct UChar2D {
@@ -96,4 +97,52 @@ void conv_2d_input(
 __host__
 int calc_dims_pad_valid(int in_x, int kernel_x, int stride_x) {
     return (in_x - kernel_x) / (int)stride_x + 1;
+}
+
+__host__
+void Conv2D_forward(
+    float *outs, int o_rows, int o_cols, // output
+    float *vals, // the values before activation; same dimensions as outs
+    float *do_dv, // change in outs w.r.t. vals; same sims as outs
+    float *ins, int i_rows, int i_cols, // input
+    float *weights, int w_rows, int w_cols, // the filters
+    int s_rows, int s_cols, int filters, // stride and filters
+    int activation // 0 = sigmoid, 1 = ReLU
+) {
+    for (int filter = 0; filter < filters; ++filter) {
+        for (int o_row = 0; o_row < o_rows; ++o_row) {
+            for (int o_col = 0; o_col < o_cols; ++o_col) {
+                int out_index = o_cols * (filter * o_rows + o_row) + o_col;
+                vals[out_index] = 0;
+                for (int k_row = 0; k_row < w_rows; ++k_row) {
+                    for (int k_col = 0; k_col < w_cols; ++k_col) {
+                        // The input row is the output row * stride in the row axis
+                        // plus the row in the kernel we're currently in.
+                        int i_row = o_row * s_rows + k_row;
+                        // Same formula applies for columns
+                        int i_col = o_col * s_cols + k_col;
+                        int in_index = i_row * i_rows + i_col;
+                        // each activation map in vals has o_rows * o_cols elements
+                        // each row has o_cols elements
+                        int weight_index = w_cols * (filter * w_rows + k_row) + k_col;
+                        vals[out_index] += weights[weight_index] * ins[in_index];
+                    }
+                }
+            }
+        }
+        int act_map_offset = filter * o_rows * o_cols;
+        // Calculate the activated outputs and the local gradient between vals and outs
+        // vec_sigmoid_and_deriv(float *out, float *out_deriv, float *in, int len);
+        if (activation == 0) {
+            vec_sigmoid_and_deriv(
+                outs + act_map_offset, do_dv + act_map_offset,
+                vals + act_map_offset, o_rows * o_cols
+            );
+        } else if (activation == 1) {
+            vec_relu_and_deriv(
+                outs + act_map_offset, do_dv + act_map_offset,
+                vals + act_map_offset, o_rows * o_cols
+            );
+        }
+    }
 }

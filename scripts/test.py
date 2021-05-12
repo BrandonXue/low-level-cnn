@@ -416,7 +416,7 @@ suite_id = []
 sample_id = []
 code = []
 value = []
-with open('../cpsc-479-p2/data/chinese_mnist/chinese_mnist.csv') as csv_file:
+with open('../data/chinese_mnist/chinese_mnist.csv') as csv_file:
     csv_reader = csv.reader(csv_file)
     header_line = True
     for row in csv_reader:
@@ -469,7 +469,7 @@ def value_to_class(val):
 
 for i in range(len(suite_id)):
     img_input = cv2.imread(
-        f"../cpsc-479-p2/data/chinese_mnist/data/input_{suite_id[i]}_{sample_id[i]}_{code[i]}.jpg",
+        f"../data/chinese_mnist/data/input_{suite_id[i]}_{sample_id[i]}_{code[i]}.jpg",
         cv2.IMREAD_GRAYSCALE
     )
     # feed-forward

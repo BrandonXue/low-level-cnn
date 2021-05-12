@@ -1,6 +1,7 @@
 #include "catch.hpp"
 
-#include "conv2d.cu.h"
+#include "layers.cu.h"
+#include "math.cu.h"
 
 TEST_CASE( "valid padding dimension calculation works", "[conv2d]" ) {
     /*
@@ -134,5 +135,61 @@ TEST_CASE( "conv 2d valid padding on smaller input", "[conv2d]") {
         REQUIRE( output.height == 1 );
         REQUIRE( output.data[0] == expected[0] );
         REQUIRE( output.data[1] == expected[1] );
+    }
+}
+
+TEST_CASE( "convolution layer given this configuration", "[conv2d]" ) {
+    int i_rows = 4, i_cols = 4;
+    float ins[i_rows * i_cols] = {.3, .2, .3, .6,
+                                  .2, .1, .5, .9,
+                                  .1, .2, .7, 1.0,
+                                   0, .2, .4, .8};
+    int w_rows = 2, w_cols = 2;
+    int s_rows = 2, s_cols = 2, filters = 2;
+    float weights[filters * w_rows * w_cols] = { 1.0,  0.2,
+                                                -0.2, -1.0,
+    
+                                                -0.3,  0.5,
+                                                 0.6,  0.7};
+    int o_rows = calc_dims_pad_valid(i_rows, w_rows, s_rows); // input 4 rows, kernel 2 rows, stride 2 rows
+    int o_cols = calc_dims_pad_valid(i_cols, w_cols, s_cols); // input 4 cols, kernel 2 cols, stride 2 cols
+    float outs[filters * o_rows * o_cols];
+    float vals[filters * o_rows * o_cols];
+    float do_dv[filters * o_rows * o_cols];
+
+    Conv2D_forward(outs, o_rows, o_cols, vals, do_dv,
+                   ins, i_rows, i_cols,
+                   weights, w_rows, w_cols,
+                   s_rows, s_cols, filters,
+                   0); // 0 == sigmoid activation
+
+    float expect_vals[filters * o_rows * o_cols] =
+        { 0.2000000000, -0.5800000000,
+         -0.0600000000,  0.0200000000,
+        
+          0.2000000000, 1.14000000000,
+          0.2100000000, 1.09000000000};
+    float expect_outs[filters *o_rows * o_cols] =
+        {0.5498339973, 0.3589325937,
+         0.4850044984, 0.5049998333,
+        
+         0.5498339973,  0.7576796390,
+         0.5523079096,  0.7483817216};
+    float expect_do_dv[filters * o_rows * o_cols] =
+        {0.2475165727, 0.2300999869,
+         0.2497751349, 0.2499750017,
+        
+         0.2475165727, 0.1836012036,
+         0.2472638826, 0.1883065204};
+
+    for (int i = 0; i < filters * o_rows * o_cols; ++i) {
+        //printf("vals[%d]=%f, expect %f\n", i, vals[i], expect_vals[i]);
+        REQUIRE( fuzzy_equals_digits(vals[i], expect_vals[i], 6) );
+    }
+    for (int i = 0; i < filters * o_rows * o_cols; ++i) {
+        REQUIRE( fuzzy_equals_digits(outs[i], expect_outs[i], 6) );
+    }
+    for (int i = 0; i < filters * o_rows * o_cols; ++i) {
+        REQUIRE( fuzzy_equals_digits(do_dv[i], expect_do_dv[i], 6) );
     }
 }
