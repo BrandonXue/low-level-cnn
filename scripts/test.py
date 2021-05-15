@@ -412,104 +412,107 @@ def deriv_mean_squared_error(y_true, y_pred):
 
 # Load the metadata csv file. It contains information about
 # the input filenames and their labels.
-suite_id = []
-sample_id = []
-code = []
-value = []
-with open('../data/chinese_mnist/chinese_mnist.csv') as csv_file:
-    csv_reader = csv.reader(csv_file)
-    header_line = True
-    for row in csv_reader:
-        # Skip header
-        if header_line:
-            header_line = False
-            continue
-        suite_id.append(row[0])
-        sample_id.append(row[1])
-        code.append(row[2])
-        value.append(row[3])
+# suite_id = []
+# sample_id = []
+# code = []
+# value = []
+# with open('../cpsc-479-p2/data/chinese_mnist/chinese_mnist.csv') as csv_file:
+#     csv_reader = csv.reader(csv_file)
+#     header_line = True
+#     for row in csv_reader:
+#         # Skip header
+#         if header_line:
+#             header_line = False
+#             continue
+#         suite_id.append(row[0])
+#         sample_id.append(row[1])
+#         code.append(row[2])
+#         value.append(row[3])
 
-# Construct network
-in_layer = InputLayer(64 * 64)
-conv_layer = Conv2DLayer((64, 64), sigmoid, sigmoid, (7, 7), (3, 3), 32)
-dense_layer = DenseLayer(conv_layer, sigmoid, deriv_sigmoid, 128, 32 * 20 * 20)
-out_layer = DenseLayer(dense_layer, sigmoid, deriv_sigmoid, 15, 128)
+# # Construct network
+# in_layer = InputLayer(64 * 64)
+# conv_layer = Conv2DLayer((64, 64), sigmoid, sigmoid, (7, 7), (3, 3), 32)
+# dense_layer = DenseLayer(conv_layer, sigmoid, deriv_sigmoid, 128, 32 * 20 * 20)
+# out_layer = DenseLayer(dense_layer, sigmoid, deriv_sigmoid, 15, 128)
 
-def value_to_class(val):
-    if val == 0:
-        return [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    if val == 1:
-        return [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    if val == 2:
-        return [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    if val == 3:
-        return [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    if val == 4:
-        return [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    if val == 5:
-        return [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    if val == 6:
-        return [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
-    if val == 7:
-        return [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
-    if val == 8:
-        return [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]
-    if val == 9:
-        return [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
-    if val == 10:
-        return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]
-    if val == 100:
-        return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]
-    if val == 1000:
-        return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0]
-    if val == 10000: # 10k
-        return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]
-    if val == 100000000: # hundred mil
-        return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+# def value_to_class(val):
+#     if val == 0:
+#         return [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+#     if val == 1:
+#         return [0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+#     if val == 2:
+#         return [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+#     if val == 3:
+#         return [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+#     if val == 4:
+#         return [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+#     if val == 5:
+#         return [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+#     if val == 6:
+#         return [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+#     if val == 7:
+#         return [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+#     if val == 8:
+#         return [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]
+#     if val == 9:
+#         return [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+#     if val == 10:
+#         return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]
+#     if val == 100:
+#         return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]
+#     if val == 1000:
+#         return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0]
+#     if val == 10000: # 10k
+#         return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]
+#     if val == 100000000: # hundred mil
+#         return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
 
-for i in range(len(suite_id)):
-    img_input = cv2.imread(
-        f"../data/chinese_mnist/data/input_{suite_id[i]}_{sample_id[i]}_{code[i]}.jpg",
-        cv2.IMREAD_GRAYSCALE
-    )
-    # feed-forward
-    out1 = in_layer.forward(img_input)
-    out2 = conv_layer.forward(out1)
-    out3 = dense_layer.forward(out2.reshape(32 * 20 * 20)) # 32 activation maps of size 20 * 20
-    out4 = out_layer.forward(out3)
+# for i in range(len(suite_id)):
+#     img_input = cv2.imread(
+#         f"../cpsc-479-p2/data/chinese_mnist/data/input_{suite_id[i]}_{sample_id[i]}_{code[i]}.jpg",
+#         cv2.IMREAD_GRAYSCALE
+#     )
+#     # feed-forward
+#     out1 = in_layer.forward(img_input)
+#     out2 = conv_layer.forward(out1)
+#     out3 = dense_layer.forward(out2.reshape(32 * 20 * 20)) # 32 activation maps of size 20 * 20
+#     out4 = out_layer.forward(out3)
 
-    # calc loss
-    expected = value_to_class(int(value[i]))
-    curr_mse = mean_squared_error(expected, out4)
-    print("mse:", curr_mse)
+#     # calc loss
+#     expected = value_to_class(int(value[i]))
+#     curr_mse = mean_squared_error(expected, out4)
+#     print("mse:", curr_mse)
 
-    # last 15 check output
-    if i > 14984:
-        print(f"input_{suite_id[i]}_{sample_id[i]}_{code[i]}.jpg was class\n", value_to_class(value[i]))
-        print("And was predicted to be\n", out4)
+#     # last 15 check output
+#     if i > 14984:
+#         print(f"input_{suite_id[i]}_{sample_id[i]}_{code[i]}.jpg was class\n", value_to_class(value[i]))
+#         print("And was predicted to be\n", out4)
 
-    # backprop
-    back1 = deriv_mean_squared_error(expected, out4)
-    back2 = out_layer.backwards(back1)
-    back3 = dense_layer.backwards(back2)
-    back4 = conv_layer.backwards(back3.reshape(32, 20, 20))
-    out_layer.update_params(1)
-    dense_layer.update_params(1)
-    conv_layer.update_params(1)
+#     # backprop
+#     back1 = deriv_mean_squared_error(expected, out4)
+#     back2 = out_layer.backwards(back1)
+#     back3 = dense_layer.backwards(back2)
+#     back4 = conv_layer.backwards(back3.reshape(32, 20, 20))
+#     out_layer.update_params(1)
+#     dense_layer.update_params(1)
+#     conv_layer.update_params(1)
 
 
 
 
 # Everything below is for testing just the dense layers
-exit()
+# exit()
 
 # Given [a, b, c, d] as input
 # We want to predict the following condition:
-# [a && (!b || !c) && !d]
+# [a && (!b || !c) && !d , !a && d && b && a]
 def generate_input():
     return [random.randint(0, 1) for i in range(4)]
 def generate_y_true(invec):
-    return [invec[0] and ((not invec[1]) or (not invec[2])) and (not invec[3])]
+    return [
+        invec[0] and ((not invec[1]) or (not invec[2])) and (not invec[3]),
+        (not invec[0]) and invec[1] and invec[2] and invec[3]
+    ]
     #         (not invec[0]) and invec[1] and invec[2] and invec[3]]
     # if (invec[0]) and (not invec[1]) and (not invec[2]):
     #     return [1, 0, 0]
@@ -518,16 +521,16 @@ def generate_y_true(invec):
     # else:
     #     return [0, 0, 1]
 
-my_test_case1 = [0, 1, 0, 1]
-my_test_case_ans1 = [0]
+my_test_case1 = [0, 1, 1, 1]
+my_test_case_ans1 = [0, 1]
 my_test_case2 = [1, 0, 0, 0]
-my_test_case_ans2 = [1]
-my_test_case3 = [0, 0, 0, 0]
-my_test_case_ans3 = [0]
+my_test_case_ans2 = [1, 0]
+my_test_case3 = [1, 1, 0, 0]
+my_test_case_ans3 = [1, 0]
 
 in_layer = InputLayer(4)
 hidden_layer = DenseLayer(in_layer, sigmoid, deriv_sigmoid, 4, 4)
-out_layer = DenseLayer(hidden_layer, sigmoid, deriv_sigmoid, 1, 4) # 3 nodes
+out_layer = DenseLayer(hidden_layer, sigmoid, deriv_sigmoid, 2, 4)
 
 
 # Counters
@@ -536,8 +539,8 @@ iters_this_epoch = 0
 epochs = 0
 
 # Totals
-iters_per_epoch = 1000
-epochs_per_session = 1
+iters_per_epoch = 5000
+epochs_per_session = 5
 max_iters = iters_per_epoch * epochs_per_session
 
 # Store
@@ -556,25 +559,26 @@ def show_only_max(x):
         return is_max
 
 def run_test():
+    np.set_printoptions(precision = 3, suppress = True)
     out1 = in_layer.forward(my_test_case1)
     out2 = hidden_layer.forward(out1)
     out3 = out_layer.forward(out2)
     print("Test 1 input:", my_test_case1)
-    print("Test 1 prediction:", out3)
+    print(f"Test 1 prediction:", out3)
     print("Test 1 expected:", my_test_case_ans1)
     print()
     out1 = in_layer.forward(my_test_case2)
     out2 = hidden_layer.forward(out1)
     out3 = out_layer.forward(out2)
     print("Test 2 input:", my_test_case2)
-    print("Test 2 prediction:", out3)
+    print(f"Test 2 prediction:", out3)
     print("Test 2 expected:", my_test_case_ans2)
     print()
     out1 = in_layer.forward(my_test_case3)
     out2 = hidden_layer.forward(out1)
     out3 = out_layer.forward(out2)
     print("Test 3 input:", my_test_case3)
-    print("Test 3 prediction:", out3)
+    print(f"Test 3 prediction:", out3)
     print("Test 3 expected:", my_test_case_ans3)
     print()
 
@@ -616,9 +620,8 @@ while True:
     if iters_this_epoch == iters_per_epoch:
         iters_this_epoch = 0
         epochs += 1
-        if epochs % 5 == 0:
-            run_test()
-        print(f"Epoch {epochs} complete. Average loss: {avg_epoch_loss.mean()}.")
+        run_test()
+        print(f"Epoch {epochs} complete. Average loss: {avg_epoch_loss.mean()}.\n\n")
 
     if epochs == epochs_per_session:
         break
