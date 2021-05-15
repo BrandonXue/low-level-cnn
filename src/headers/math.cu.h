@@ -2,6 +2,12 @@
 #define BX_MATH_CU_H
 
 __host__
+float rand_float(float, float);
+
+__host__
+void random_init(float*, int, float, float);
+
+__host__
 double round_digits(double, int);
 
 __host__
@@ -26,6 +32,12 @@ __host__
 void mat_vec_multiply(float*, float*, int, int, float*);
 
 __host__
+void mat_vec_multiply_reduce_sum(float*, float*, int, int, float*);
+
+__host__
 void vec_vec_multiply(float*, float*, float*, int);
+
+__host__
+void vec_mat_dot(float*, float*, float*, int, int);
 
 #endif

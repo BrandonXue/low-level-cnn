@@ -4,3 +4,4 @@ obj/*
 scripts/preview.sh
 tests/bin/*
 tests/obj/*
+data/chinese_mnist/processed.data

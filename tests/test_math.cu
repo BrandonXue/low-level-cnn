@@ -2,6 +2,21 @@
 
 #include "math.cu.h"
 
+TEST_CASE( "random floats are bounded properly", "[math]" ) {
+    for (int i = 0; i < 100; ++i) {
+        float my_rand = rand_float(-0.1, 0.1);
+        REQUIRE( my_rand >= -0.1 );
+        REQUIRE( my_rand <= 0.1 );
+    }
+
+    float my_weights[10];
+    random_init(my_weights, 10, -0.5, 0.5);
+    for (int i = 0; i < 10; ++i) {
+        REQUIRE( my_weights[i] >= -0.5 );
+        REQUIRE( my_weights[i] <= 0.5 );
+    }
+}
+
 TEST_CASE( "round by digits works", "[math]" ) {
     REQUIRE( round_digits(4.2345678, 3) == 4.235 );
     REQUIRE( round_digits(4.2345678, 9) == 4.2345678 );
@@ -46,6 +61,23 @@ TEST_CASE( "vector and vector element-wise multiplication", "[math]" ) {
         REQUIRE( fuzzy_equals_digits(resbuf_ab[i], expect_ab[i], 4) );
         REQUIRE( fuzzy_equals_digits(resbuf_bc[i], expect_bc[i], 4) );
         REQUIRE( fuzzy_equals_digits(resbuf_ac[i], expect_ac[i], 4) );
+    }
+}
+
+TEST_CASE( "row vector dotted with matrix", "[math]") {
+    float v[5] = {0.3, 1.9, 2.3, 0.4, 5.2};
+    float A[15] = {0.2, 0.1, 0.5,
+                   1.3, 0.9, 0.3,
+                   5.2, 4.5, 6.3,
+                   0.6, 0.9, 0.5,
+                   3.5, 9.9, 1.4};
+    int M = 5, N = 3;
+    float out[N];
+    vec_mat_dot(out, v, A, M, N);
+
+    float expect_out[N] = {32.9300000, 63.9300000, 22.6900000};
+    for (int i = 0; i < N; ++i) {
+        REQUIRE( fuzzy_equals_digits(out[i], expect_out[i], 4) );
     }
 }
 
@@ -135,3 +167,22 @@ TEST_CASE( "vectorized ReLU and first derivative", "[math]" ) {
     }
 }
 
+TEST_CASE( "matrix vector multiply then reduce sum, combined operation", "[math]" ) {
+    int input_nodes = 4, output_nodes = 2;
+    float weights[input_nodes * output_nodes] =
+        {  0.3,  0.12,
+         -0.12,  0.21,
+          0.38,  0.19,
+          0.46, -0.05};
+    float pdL_pdvals[output_nodes] = {0.51, 0.82};
+    float pdL_pdout_pred[input_nodes];
+
+    mat_vec_multiply_reduce_sum(pdL_pdout_pred, weights, input_nodes, output_nodes, pdL_pdvals);
+
+    float expect[input_nodes] = {0.2514, 0.1110, 0.3496, 0.1936};
+
+    for (int i = 0; i < input_nodes; ++i) {
+        REQUIRE( fuzzy_equals_digits(pdL_pdout_pred[i], expect[i], 5) );
+    }
+
+}

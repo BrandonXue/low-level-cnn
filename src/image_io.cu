@@ -93,6 +93,19 @@ char int256_to_ascii(int intensity) {
     return ' ';
 }
 
+__host__
+char flt01_to_ascii(float intensity) {
+    if (intensity >= 0.8) 
+        return '#';
+    if (intensity >= 0.6)
+        return '*';
+    if (intensity >= 0.4)
+        return '+';
+    if (intensity >= 0.2)
+        return '.';
+    return ' ';
+}
+
 /**
  * Print 1 channel grayscale or 3 channel RGB image as ASCII art.
  */
@@ -109,6 +122,45 @@ void img_to_ascii(unsigned char *data, int width, int height, int c) {
                 }
                 avg /= c;
                 printf("%c", int256_to_ascii(avg));
+            }
+            printf("\n");
+        }
+    }
+}
+
+/**
+ * Same as img_to_ascii but takes floats. First performs a normalization.
+ */
+__host__
+void flt_img_to_ascii(float *data, int width, int height, int c) {
+    if (data != NULL && (c == 1 || c == 3)) {
+        float min_data = data[0];
+        float max_data = data[0];
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                float avg = 0;
+                for (int chn = 0; chn < c; ++chn) {
+                    avg += data[c * (y * width + x) + chn];
+                }
+                avg /= (float)c;
+                if (avg < min_data) {
+                    min_data = avg;
+                }
+                if (avg > max_data) {
+                    max_data = avg;
+                }
+            }
+        }
+
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                float avg = 0;
+                for (int chn = 0; chn < c; ++chn) {
+                    avg += data[c * (y * width + x) + chn];
+                }
+                avg /= (float)c;
+                avg = (avg - min_data) / (max_data - min_data);
+                printf("%c", flt01_to_ascii(avg));
             }
             printf("\n");
         }
@@ -224,4 +276,19 @@ InputLabel *load_chinese_mnist_info() {
         ++line_index;
     }
     return info;  
+}
+
+__host__
+void preprocess_images(float *out, InputLabel *input_labels) {
+    int status;
+    for (int img = 0; img < 14999; ++img) {
+        unsigned char *new_image = load_img_carefully(
+            input_labels[img].input, 64, 64, 1, &status
+        );
+        // load the pixels into the correct place. divid each by 255 to normalize.
+        for (int pixel = 0; pixel < 64 * 64; ++pixel) {
+            out[64 * 64 * img + pixel] = (float)new_image[pixel] / 255.0;
+        }
+        free(new_image);
+    }
 }

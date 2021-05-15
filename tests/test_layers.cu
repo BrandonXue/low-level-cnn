@@ -138,7 +138,7 @@ TEST_CASE( "conv 2d valid padding on smaller input", "[conv2d]") {
     }
 }
 
-TEST_CASE( "convolution layer given this configuration", "[conv2d]" ) {
+TEST_CASE( "convolution layer forward pass", "[conv2d]" ) {
     int i_rows = 4, i_cols = 4;
     float ins[i_rows * i_cols] = {.3, .2, .3, .6,
                                   .2, .1, .5, .9,
@@ -193,3 +193,133 @@ TEST_CASE( "convolution layer given this configuration", "[conv2d]" ) {
         REQUIRE( fuzzy_equals_digits(do_dv[i], expect_do_dv[i], 6) );
     }
 }
+
+TEST_CASE( "convolution layer backprop", "[conv2d]" ) {
+    int o_rows = 2, o_cols = 2; // output dims during forward-feed
+    int w_rows = 2, w_cols = 2; // kernel dims
+    int i_rows = 4, i_cols = 4; // input dims during forward-feed
+    int s_rows = 2, s_cols = 2, filters = 1; // stride and number of filters
+
+    float pdL_pdouts[o_rows * o_cols] =
+        { 2.3, -1.2,
+         -0.4, 1.2 };
+    float douts_dvals[o_rows * o_cols] =
+        {0.2475165727, 0.2300999869,
+         0.2497751349, 0.2499750017};
+    float weights[w_rows * w_cols] =
+        {0.42, -0.12,
+         2.12, -1.23};
+    float ins[i_rows * i_cols] = 
+        {1, 2, 2, 1,
+         2, 2, 1, 1,
+         1, 1, 2, 2,
+         1, 3, 1, 3};
+
+    float pdL_pdvals[o_rows * o_cols];
+    float pdL_pdouts_pred[i_rows * i_cols];
+    float grads[w_rows * w_cols];
+
+    Conv2D_backward(
+        o_rows, o_cols,
+        pdL_pdouts, douts_dvals, pdL_pdvals, pdL_pdouts_pred,
+        ins, i_rows, i_cols,
+        weights, w_rows, w_cols,
+        grads,
+        s_rows, s_cols, filters);
+
+    float expect_pdL_pdvals[o_rows * o_cols] = 
+        { 0.56928811720, -0.2761199843,
+         -0.09991005396,  0.2999700020};
+    
+    // skipped because not implemented yet. need to implement padding and dilation
+    //float expect_pdL_pdouts_pred[i_rows * i_cols];
+
+    float expect_grads[w_rows * w_cols] =
+        { 0.5170780986, 1.3624862001,
+          1.0625161981, 1.4626360942};
+
+    for (int i = 0 ; i < o_rows * o_cols; ++i) {
+        REQUIRE( fuzzy_equals_digits(pdL_pdvals[i], expect_pdL_pdvals[i], 6) );
+    }
+    for (int i = 0; i < w_rows * w_cols; ++i) {
+        REQUIRE( fuzzy_equals_digits(grads[i], expect_grads[i], 6) );
+    }
+}
+
+TEST_CASE( "dense layer forward pass", "[dense]" ) {
+    int i_len = 5, o_len = 2;
+    float ins[i_len] = {3.43, 5.3, 1.02, 0.43, 2.4};
+    float weights[i_len * o_len] =
+        { 0.34,  0.93,
+         -0.03,  0.12,
+          0.13, -0.42,
+          0.94, -0.29,
+         -0.07,  0.52};
+
+    float vals[o_len];
+    float outs[o_len];
+    float do_dv[o_len];
+    
+    Dense_forward(
+        outs,o_len,
+        vals, do_dv,
+        ins, i_len,
+        weights,
+        0 // sigmoid activation
+    );
+
+    float expect_vals[o_len] = {1.3760000000, 4.5208000000};
+    float expect_outs[o_len] = {0.7983478144, 0.9892367912};
+    float expect_do_dv[o_len] = {0.1609885816, 0.01064736214};
+    for (int i = 0; i < o_len; ++i) {
+        REQUIRE( fuzzy_equals_digits(vals[i], expect_vals[i], 5) );
+    }
+    for (int i = 0; i < o_len; ++i) {
+        REQUIRE( fuzzy_equals_digits(outs[i], expect_outs[i], 6) );
+    }
+    for (int i = 0; i < o_len; ++i) {
+        REQUIRE( fuzzy_equals_digits(do_dv[i], expect_do_dv[i], 5) );
+    }
+}
+
+TEST_CASE( "dense layer backward pass", "[dense]" ) {
+    int i_len = 4, o_len = 2, activation = 0;
+    float ins[i_len] = {1.3, 0.3, -0.4, 0.8};
+    float weights[i_len * o_len] = 
+        {0.3, 0.5,
+         0.1, 0.2,
+         0.4, 0.1,
+         0.2, 0.3};
+    float pdL_pdouts[o_len] = {0.08, 0.12};
+    float douts_dvals[o_len] = {0.8, 0.9};
+    float pdL_pdvals[o_len];
+    float pdL_pdouts_pred[i_len];
+    float grads[i_len * o_len];
+
+    Dense_backward(
+        o_len, pdL_pdouts, douts_dvals, pdL_pdvals, pdL_pdouts_pred,
+        ins, i_len, weights, grads, activation
+    );
+    float expect_pdL_pdvals[o_len] = {0.064, 0.108};
+    float expect_pdL_pdouts_pred[i_len] = {0.0732, 0.028, 0.0364, 0.0452};
+    float expect_grads[i_len * o_len] = 
+        { 0.0832, 0.1404,
+          0.0192, 0.0324,
+         -0.0256,-0.0432,
+          0.0512, 0.0864};
+    for (int i = 0; i < o_len; ++i) {
+        REQUIRE( fuzzy_equals_digits(pdL_pdvals[i], expect_pdL_pdvals[i], 5) );
+    }
+    for (int i = 0; i < i_len; ++i) {
+        REQUIRE( fuzzy_equals_digits(pdL_pdouts_pred[i], expect_pdL_pdouts_pred[i], 5) );
+    }
+    for (int i = 0; i < i_len * o_len; ++i) {
+        REQUIRE( fuzzy_equals_digits(grads[i], expect_grads[i], 5) );
+    }
+}
+
+
+
+
+
+

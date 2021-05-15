@@ -2,10 +2,23 @@
 #include <math.h>
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "math.cu.h"
 
+__host__
+float rand_float(float min, float max) {
+    double range = max - min;
+    double zero_to_one = (double)rand() / (double)(RAND_MAX);
+    return float(zero_to_one * range + (double)min);
+}
 
+__host__
+void random_init(float *arr, int len, float min, float max) {
+    for (int i = 0; i < len; ++i ) {
+        arr[i] = rand_float(min, max);
+    }
+}
 
 __host__
 double round_digits(double x, int digits) {
@@ -41,6 +54,34 @@ void mat_vec_multiply(float *out, float *A, int M, int N, float *v) {
     for (int col = 0; col < N; ++col) {
         for (int row = 0; row < M; ++row) {
             out[row * N + col] = A[row * N + col] * v[col];
+        }
+    }
+}
+
+/**
+ * A combined operation on matrix A and vector v,
+ * A • diag(v) reduced by sum (adding each row's elements together).
+ */
+__host__
+void mat_vec_multiply_reduce_sum(float *out, float *A, int M, int N, float *v) {
+    for (int row = 0; row < M; ++row) {
+        out[row] = 0;
+        for (int col = 0; col < N; ++col) {
+            out[row] += A[row * N + col] * v[col];
+        }
+    }
+}
+
+/**
+ * Dot product between row vector v and matrix A.
+ * Output does not need zero-initialization.
+ */
+__host__
+void vec_mat_dot(float *out, float *v, float *A, int M, int N) {
+    for (int mat_col = 0; mat_col < N; ++mat_col) {
+        out[mat_col] = 0;
+        for (int mat_row = 0; mat_row < M; ++mat_row) {
+            out[mat_col] += v[mat_row] * A[mat_row * N + mat_col];
         }
     }
 }
@@ -134,4 +175,58 @@ void vec_relu_and_deriv(float *out, float *out_deriv, float *in, int len) {
     }
 }
 
+/**
+ * Vectorized softmax and its Jacobian.
+ * Since softmax takes a vector, it doesn't have a singlular scalar derivative.
+ */ /*
+__host__
+void vec_softmax_and_deriv(float *out, float *out_deriv, float *in, int len) {
+    // softmax(x) = softmax(x - C)
+    // For numeric stability, subtract the max from each element
+    float in_max = in[0];
+    for (int i = 0; i < len; ++i) {
+        if (in[i] > in_max) {
+            in_max = in[i];
+        }
+    }
+    // Find the denominator (sum of e^x for all x in inputs)
+    float in_adjusted[len]; // inputs offset by C, then taken as exponential
+    float sum_exp = 0;
+    for (int i = 0; i < len; ++i) {
+        in_adjusted[i] = exp(in[i] - in_max);
+        sum_exp += in_adjusted;
+    }
+    // In the unlikely event the denom is zero, add fuzz factor
+    if (sum_exp == 0) {
+        sum_exp = 0.0000001;
+    }
+    // Calculate the softmaxes by dividing e^x by the denominator
+    for (int i = 0; i < len; ++i) {
+        out[i] = in_adjusted[i] / sum_exp;
+    }
 
+    // Calculate the Jacobian matrix
+    // Each row contains the partial derivatives of one softmax output  S_i
+
+    // Each column contains the before-activation value that the partial derivative
+    // is being taken with respect to.
+    //
+    //  [∂S1/∂v1 ∂S1/∂v2 ... ∂S1/∂vN
+    //   ∂S2/∂v1 ∂S2/∂v2 ... ∂S2/∂vN
+    //     ...     ...   ...   ...
+    //   ∂SN/∂v1 ∂SN/∂v2 ... ∂SN/∂vN]
+    //
+    // This means dotting a row vector with partial derivative of loss wrt the activation values
+    // with the Jacobian yields the change 
+    // [∂L/∂S1 ∂L/∂S2 ... ∂L/∂SN]
+    for (int j = 0; j < len; ++j) {
+        for (int i = 0; i < len; ++i) {
+            int index = j * len + i; // i is col, j is row
+            if (i == j) {
+                out_deriv[index] = out[i] * (1 - out[i]);
+            } else {
+                out_deriv[index] = -out[i] * out[j];
+            }
+        }
+    }
+}*/

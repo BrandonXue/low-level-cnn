@@ -29,4 +29,14 @@ void img_to_unicode(unsigned char*, int, int, int);
 __host__
 InputLabel *load_chinese_mnist_info();
 
+__host__
+void preprocess_images(float*, InputLabel*);
+
+__host__
+char flt01_to_ascii(float);
+
+__host__
+void flt_img_to_ascii(float*, int, int, int);
+
+
 #endif
