@@ -1,5 +1,6 @@
 // Standard
 #include <stdio.h>
+#include <time.h>
 
 // Third-party
 #include <cuda.h>
@@ -224,15 +225,6 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     // Random initialize weights
     random_init(l3_weights, l3_in_nodes * l3_out_nodes, -1, 1);
 
-    // Memory for training targets
-    float target_vec[15];
-    // Memory for losses
-    float current_loss;
-    int summary_iterations = 500;
-    float past_losses[summary_iterations];
-    bool past_correct[summary_iterations];
-
-
     // FILE PATHS
     const char *l1_weights_filename = "data/model/l1_weights.data";
     const char *l2_weights_filename = "data/model/l2_weights.data";
@@ -262,6 +254,17 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
             fclose(l3_weights_file);
         }
     }
+
+    // Memory for training targets
+    float target_vec[15];
+    // Memory for losses
+    float current_loss;
+    // For aggregate information
+    int summary_iterations = 500;
+    float past_losses[summary_iterations];
+    bool past_correct[summary_iterations];
+
+    clock_t begin_time = clock();
 
     int total_iters = atoi(iters);
     for (int iter = 0; iter < total_iters; ++iter) {
@@ -369,6 +372,11 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
 
         // This will execute once every summary_iterations.
         if ( (iter+1) % summary_iterations == 0) {
+
+            // Stop the clock for this period, and calculate time spent.
+            clock_t end_time = clock();
+            double time_over_period = (double)(end_time - begin_time) / CLOCKS_PER_SEC;
+
             // important sanity check: make sure offsets are correct.
             // images and metadata should make sense and match.
             flt_img_to_ascii(data+float_offset, 64, 64, 1);
@@ -391,7 +399,12 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
             accuracy = accuracy * 100 /  summary_iterations;
             printf("\nCurrent iteration: %d\n", iter + 1);
             printf("Average loss over last %d iterations: %f\n", summary_iterations, avg_loss);
-            printf("Accuracy of last %d iterations: %0.2f%%\n", summary_iterations, accuracy);
+            printf("Accuracy over last %d iterations: %0.2f%%\n", summary_iterations, accuracy);
+            printf("Time measured by clock() processing the last %d iterations: %0.2fms\n",
+                summary_iterations, 1000 * time_over_period); 
+
+            // Mark the time for the next period
+            begin_time = clock();
         }
     }
     
