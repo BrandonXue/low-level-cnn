@@ -158,7 +158,7 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     int l1_filters = 16;
     int l1_kernel_rows = 5, l1_kernel_cols = 5;
     int l1_stride_rows = 3, l1_stride_cols = 3;
-    int l1_activation = 0; // the code for sigmoid
+    int l1_activation = 1; // the code for ReLU
     
     // Output dimensions depend on input dimensions, kernel size, and stride
     int l1_out_rows = calc_dims_pad_valid(l1_in_rows, l1_kernel_rows, l1_stride_rows);
@@ -176,7 +176,7 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     float *l1_weights = (float*)malloc(l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float));
     float *l1_grads =   (float*)malloc(l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float));
     // Random initialize weights
-    random_init(l1_weights, l1_filters * l1_kernel_rows * l1_kernel_cols, -0.1, 0.1);
+    random_init(l1_weights, l1_filters * l1_kernel_rows * l1_kernel_cols, 0, 1);
 
 
     /** Layer2: Dense Layer **/
@@ -199,7 +199,7 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     float *l2_weights = (float*)malloc(l2_in_nodes * l2_out_nodes * sizeof(float));
     float *l2_grads =   (float*)malloc(l2_in_nodes * l2_out_nodes * sizeof(float));
     // Random initialize weights
-    random_init(l2_weights, l2_in_nodes * l2_out_nodes, -0.1, 0.1);
+    random_init(l2_weights, l2_in_nodes * l2_out_nodes, -1, 1);
     
 
     /** Layer3: Dense Layer (Output) **/
@@ -222,7 +222,7 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     float *l3_weights = (float*)malloc(l3_in_nodes * l3_out_nodes * sizeof(float));
     float *l3_grads =   (float*)malloc(l3_in_nodes * l3_out_nodes * sizeof(float));
     // Random initialize weights
-    random_init(l3_weights, l3_in_nodes * l3_out_nodes, -0.1, 0.1);
+    random_init(l3_weights, l3_in_nodes * l3_out_nodes, -1, 1);
 
     // Memory for training targets
     float target_vec[15];
