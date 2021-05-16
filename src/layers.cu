@@ -163,7 +163,9 @@ void Conv2D_backward(
     // gradient between outs and vals, we can calculate the global
     // gradient for the vals by multiplying element-wise.
     vec_vec_multiply(pdL_pdvals, pdL_pdouts, douts_dvals, filters * o_rows * o_cols);
-
+    //for (int i = 0; i < filters * o_rows * o_cols; ++i) {
+    //    printf("index %d, pdL_pdouts=%f, douts_dvals=%f, pdL_pdvals=%f\n", i, pdL_pdouts[i], douts_dvals[i], pdL_pdvals[i]);
+    //}
     // calculate gradients, this is a shortcut to convolute a dilated matrix
     // on another matrix without having to actually perform dilation.
     for (int filter = 0; filter < filters; ++filter) {
@@ -179,8 +181,13 @@ void Conv2D_backward(
                         int in_index = in_row * i_cols + in_col;
                         int gg_index = o_cols * (filter * o_rows + gg_row) + gg_col;
                         grads[lg_index] += pdL_pdvals[gg_index] * ins[in_index];
+                        //printf("in_index %d, in = %f\n", in_index, ins[in_index]);
+                        //if (pdL_pdvals[gg_index] != 0) {
+                        //    printf("pdL_pdvals[%d] = %f\n", gg_index, pdL_pdvals[gg_index]);
+                        //}
                     }
                 }
+                //printf("in loop grads[%d]=%f\n", lg_index, grads[lg_index]); 
             }
         }
     }
@@ -195,13 +202,17 @@ void Dense_forward(
     float *weights, // the weights; same length as input
     int activation // 0 = sigmoid, 1 = ReLU, 2 = None
 ) {
+    // debug
+    //for (int i = 0; i < i_len; ++i) {
+    //    printf("ins[%d]=%f", i, ins[i]);
+    //}
     vec_mat_dot(vals, ins, weights, i_len, o_len);
     if (activation == 0) {
         vec_sigmoid_and_deriv(outs, do_dv, vals, o_len);
     } else if (activation == 1) {
         vec_relu_and_deriv(outs, do_dv, vals, o_len);
     } 
-    // implied else, no activation results in empty do_dv and vals
+    // implied else, no activation results in empty do_dv and outs
 } 
 
 __host__
@@ -230,3 +241,12 @@ void Dense_backward(
     mat_vec_multiply_reduce_sum(pdL_pdouts_pred, weights, i_len, o_len, pdL_pdvals);
 }
 
+__host__
+void SGD_update_params(float eta, float *weights, float *grads, int len) {
+    //printf("before: %f\n", weights[0]);
+    //printf("grad: %f\n", grads[0]);
+    for (int i = 0; i < len; ++i) {
+        weights[i] -= eta * grads[i];
+    }
+    //printf("after: %f\n", weights[0]);
+}

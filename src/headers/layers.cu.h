@@ -71,4 +71,7 @@ void Dense_backward(
     int
 );
 
+__host__
+void SGD_update_params(float, float*, float*, int);
+
 #endif

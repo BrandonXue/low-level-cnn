@@ -2,6 +2,9 @@
 #define BX_MATH_CU_H
 
 __host__
+void print_vec(float*, int, int);
+
+__host__
 float rand_float(float, float);
 
 __host__

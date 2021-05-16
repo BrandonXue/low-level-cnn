@@ -6,6 +6,25 @@
 
 #include "math.cu.h"
 
+/**
+ * Pretty print a vector. Useful for debug.
+ */
+__host__
+void print_vec(float *vec, int len, int precision) {
+    if (precision < 0) {
+        precision = 0;
+    }
+
+    printf("[");
+    for (int i = 0; i < len; ++i) {
+        printf("%0.*f", precision, vec[i]);
+        if (i + 1 < len) {
+            printf("  ");
+        }
+    }
+    printf("]\n");
+}
+
 __host__
 float rand_float(float min, float max) {
     double range = max - min;

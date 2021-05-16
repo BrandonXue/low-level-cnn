@@ -6,6 +6,7 @@
 
 // Local
 #include "layers.cu.h"
+#include "loss_func.cu.h"
 #include "image_io.cu.h"
 #include "math.cu.h"
 #include "string.cu.h"
@@ -177,10 +178,11 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     // Random initialize weights
     random_init(l1_weights, l1_filters * l1_kernel_rows * l1_kernel_cols, -0.1, 0.1);
 
+
     /** Layer2: Dense Layer **/
 
     // CONFIGURABLE
-    int l2_out_nodes = 64;
+    int l2_out_nodes = 128;
     int l2_activation = 0; // the code for sigmoid
 
     // Input nodes depend on the previous layer
@@ -192,16 +194,16 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     float *l2_douts_dvals = (float*)malloc(l2_out_nodes * sizeof(float));
     float *l2_pdL_pdvals =  (float*)malloc(l2_out_nodes * sizeof(float));
     // The layers needs memory to calculate the upstream gradients
-    float *l2_pdL_pdouts_prev = (float*)malloc(l2_in_nodes * sizeof(float));
+    //float *l2_pdL_pdouts_prev = (float*)malloc(l2_in_nodes * sizeof(float));
     // Each out-node has a weight for each in-node
     float *l2_weights = (float*)malloc(l2_in_nodes * l2_out_nodes * sizeof(float));
     float *l2_grads =   (float*)malloc(l2_in_nodes * l2_out_nodes * sizeof(float));
     // Random initialize weights
     random_init(l2_weights, l2_in_nodes * l2_out_nodes, -0.1, 0.1);
     
+
     /** Layer3: Dense Layer (Output) **/
-    
-    // CONFIGURABLE
+
     int l3_out_nodes = 15; // 15 classes to predict
     int l3_activation = 2; // the code for none; no activation
                            // the cross entropy is programmed to apply softmax activation
@@ -215,17 +217,157 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     float *l3_douts_dvals = (float*)malloc(l3_out_nodes * sizeof(float));
     float *l3_pdL_pdvals =  (float*)malloc(l3_out_nodes * sizeof(float));
     // The layers needs memory to calculate the upstream gradients
-    float *l3_pdL_pdouts_prev = (float*)malloc(l3_in_nodes * sizeof(float));
+    //float *l3_pdL_pdouts_prev = (float*)malloc(l3_in_nodes * sizeof(float));
     // Each out-node has a weight for each in-node
     float *l3_weights = (float*)malloc(l3_in_nodes * l3_out_nodes * sizeof(float));
     float *l3_grads =   (float*)malloc(l3_in_nodes * l3_out_nodes * sizeof(float));
     // Random initialize weights
     random_init(l3_weights, l3_in_nodes * l3_out_nodes, -0.1, 0.1);
 
+    // Memory for training targets
+    float target_vec[15];
+    // Memory for losses
+    float current_loss;
+    int avg_loss_period = 2000;
+    float past_losses[avg_loss_period];
+
+    // TODO
     if (load) {
         printf("Loading from existing model.\n");
     }
+
+    int total_iters = atoi(iters);
+    for (int iter = 0; iter < total_iters; ++iter) {
+        int sample_index = rand() % 14999; // 14999 images, indices 0 - 14998
+        int float_offset = sample_index * l1_in_rows * l1_in_cols;
+        int target_label = metadata[sample_index].label;
+        
+        // Layer 1 forward
+        Conv2D_forward(
+            l1_outs, l1_out_rows, l1_out_cols,
+            l1_vals,
+            l1_douts_dvals,
+            data + float_offset, l1_in_rows, l1_in_cols,
+            l1_weights, l1_kernel_rows, l1_kernel_cols,
+            l1_stride_rows, l1_stride_cols, l1_filters,
+            l1_activation
+        );
+        // Layer 2 forward
+        Dense_forward(
+            l2_outs, l2_out_nodes,
+            l2_vals,
+            l2_douts_dvals,
+            l1_outs, l2_in_nodes,
+            l2_weights,
+            l2_activation
+        );
+        // Layer 3 forward
+        Dense_forward(
+            l3_outs, l3_out_nodes,
+            l3_vals,
+            l3_douts_dvals,
+            l2_outs, l3_in_nodes,
+            l3_weights,
+            l3_activation
+        );
+
+        // Calculate loss
+        cn_mnist_target_to_vec(target_vec, target_label);
+        // sanity check: see if target vector is correct
+        //print_vec(target_vec, 15, 0);
+        cat_cross_entropy(
+            l3_out_nodes, target_vec, l3_vals, l3_outs,
+            l3_pdL_pdvals, &current_loss
+        );
+        // use last_100_losses as a ring buffer
+        past_losses[(iter % avg_loss_period)] = current_loss;
+
+        // Layer 3 backward
+        Dense_backward(
+            l3_out_nodes,
+            l3_pdL_pdouts,
+            l3_douts_dvals,
+            l3_pdL_pdvals,
+            l2_pdL_pdouts,
+            l2_outs, l3_in_nodes,
+            l3_weights,
+            l3_grads,
+            l3_activation
+        );
+        // Layer 2 backward
+        Dense_backward(
+            l2_out_nodes,
+            l2_pdL_pdouts,
+            l2_douts_dvals,
+            l2_pdL_pdvals,
+            l1_pdL_pdouts,
+            l1_outs, l2_in_nodes,
+            l2_weights,
+            l2_grads,
+            l2_activation
+        );
+        // Layer 1 backward
+        Conv2D_backward(
+            l1_out_rows, l1_out_cols,
+            l1_pdL_pdouts,
+            l1_douts_dvals,
+            l1_pdL_pdvals,
+            l1_pdL_pdouts_prev,
+            data + float_offset, l1_in_rows, l1_in_cols,
+            l1_weights, l1_kernel_rows, l1_kernel_cols,
+            l1_grads,
+            l1_stride_rows, l1_stride_cols, l1_filters
+        );
+
+        // Lower learning rate (eta) as iterations go on
+        // Kind of like simulated annealing
+        //float eta = 0.5 - 0.4 * (float)iter / (float)total_iters;
+        float eta = 0.1 - (0.05 * (float)iter / (float)total_iters);
+
+        //printf("before: %f, %f, %f, %f\n", l1_weights[0], l1_weights[1], l1_weights[2], l1_weights[3]);
+        // Update layer 1
+        SGD_update_params(
+            eta, l1_weights, l1_grads,
+            l1_filters * l1_kernel_rows * l1_kernel_cols
+        );
+        //printf("after: %f, %f, %f, %f\n", l1_weights[0], l1_weights[1], l1_weights[2], l1_weights[3]);
+        //printf("l1 grad: %0.11f\n", l1_grads[0]);
+        //printf("before: %f, %f, %f, %f\n", l2_weights[0], l2_weights[1], l2_weights[2], l2_weights[3]);
+        // Update layer 2
+        SGD_update_params(
+            eta, l2_weights, l2_grads,
+            l2_in_nodes * l2_out_nodes
+        );
+        //printf("after: %f, %f, %f, %f\n", l2_weights[0], l2_weights[1], l2_weights[2], l2_weights[3]);
+
+        // Update layer 3
+        SGD_update_params(
+            eta, l3_weights, l3_grads,
+            l3_in_nodes * l3_out_nodes
+        );
+
+        if ( (iter+1) % avg_loss_period == 0) {
+            // important sanity check: make sure offsets are correct.
+            // images and metadata should make sense and match.
+            flt_img_to_ascii(data+float_offset, 64, 64, 1);
+            printf(
+                "Image: %s, correct label:  %d\n",
+                metadata[sample_index].input,
+                metadata[sample_index].label
+            );
+            printf("Prediction:\n");
+            print_vec(l3_outs, 15, 3);
+            float avg_loss = 0;
+            for (int i = 0; i < avg_loss_period; ++i) {
+                avg_loss += past_losses[i];
+            }
+            avg_loss /= avg_loss_period;
+            printf("Current iteration: %d\n", iter);
+            printf("Average loss over last %d iterations: %f\n", avg_loss_period, avg_loss);
+        }
+    }
     
+    // TODO
     if (save) {
         printf("The model will be saved at the end of the session.\n");
     }
@@ -282,7 +424,139 @@ void interactive_loop() {
 }
 
 
+/* START: Used for testing dense layers only */
+void generate_input(float *buffer, int len) {
+    for (int i = 0; i < len; ++i) {
+        buffer[i] = (float)(rand() % 10);
+    }
+}
+
+void generate_answer(float *input, float *answer) {
+    float sum1 = input[0] + input[1] + input[2] + input[3] + input[4];
+    float sum2 = input[5] + input[6] + input[7] + input[8] + input[9];
+    float sum3 = input[10] + input[11] + input[12] + input[13] + input[14];
+    if (sum1 > sum2 && sum1 > sum3) {
+        answer[0] = 1; answer[1] = 0; answer[2] = 0;
+    } else if (sum2 > sum1 && sum2 > sum3) {
+        answer[0] = 0; answer[1] = 1; answer[2] = 0;
+    } else {
+        answer[0] = 0; answer[1] = 0; answer[2] = 1;
+    }
+}
+
+void dense_layer_test() {
+    int INPUT_SIZE = 15, L1_NODES = 6, OUT_NODES = 3;
+    float input[INPUT_SIZE];
+    float answer[OUT_NODES];
+    float l1_outs[L1_NODES];
+    float l1_vals[L1_NODES];
+    float l1_douts_dvals[L1_NODES];
+    float l1_pdL_pdvals[L1_NODES];
+    float l1_pdL_pdouts[L1_NODES];
+    float l1_pdL_pdouts_prev[INPUT_SIZE];
+    float l1_weights[L1_NODES * INPUT_SIZE];
+    random_init(l1_weights, L1_NODES * INPUT_SIZE, -1, 1);
+    float l1_grads[L1_NODES * INPUT_SIZE];
+
+    float l2_outs[OUT_NODES];
+    float l2_vals[OUT_NODES];
+    float l2_douts_dvals[OUT_NODES];
+    float l2_pdL_pdvals[OUT_NODES];
+    float l2_pdL_pdouts[OUT_NODES];
+    float l2_weights[OUT_NODES * L1_NODES];
+    random_init(l2_weights, OUT_NODES * L1_NODES, -1, 1);
+    float l2_grads[OUT_NODES * L1_NODES];
+
+    float current_loss;
+    int period = 1000;
+    float past_losses[period];
+    bool past_correct[period];
+    int total_iterations = 10000;
+    for (int i = 0; i < total_iterations; ++i) {
+        generate_input(input, INPUT_SIZE);
+        generate_answer(input, answer);
+        Dense_forward(
+            l1_outs, L1_NODES,
+            l1_vals,
+            l1_douts_dvals,
+            input, INPUT_SIZE,
+            l1_weights,
+            0 // sigmoid
+        );
+        Dense_forward(
+            l2_outs, OUT_NODES,
+            l2_vals,
+            l2_douts_dvals,
+            l1_outs, L1_NODES,
+            l2_weights,
+            2 // no activation
+        );
+        cat_cross_entropy(
+            OUT_NODES, answer, l2_vals, l2_outs,
+            l2_pdL_pdvals, &current_loss
+        );
+        //printf("l2outs %f %f %f\n", l2_outs[0], l2_outs[1], l2_outs[2]);
+        past_losses[(i % period)] = current_loss;
+        bool current_correct = false;
+        if (l2_outs[0] > l2_outs[1] && l2_outs[0] > l2_outs[2] && answer[0] == 1)
+            current_correct = true;
+        else if (l2_outs[1] > l2_outs[0] && l2_outs[1] > l2_outs[2] && answer[1] == 1)
+            current_correct = true;
+        else if (answer[2] == 1)
+            current_correct = true;
+        past_correct[(i % period)] = current_correct;
+         Dense_backward(
+            OUT_NODES,
+            l2_pdL_pdouts,
+            l2_douts_dvals,
+            l2_pdL_pdvals,
+            l1_pdL_pdouts,
+            l1_outs, L1_NODES,
+            l2_weights,
+            l2_grads,
+            2
+        );
+          Dense_backward(
+            L1_NODES,
+            l1_pdL_pdouts,
+            l1_douts_dvals,
+            l1_pdL_pdvals,
+            l1_pdL_pdouts_prev,
+            input, INPUT_SIZE,
+            l1_weights,
+            l1_grads,
+            0
+        );
+        float alpha = 0.1 - 0.05 * ((float)i / (float)total_iterations);
+        SGD_update_params(alpha, l1_weights, l1_grads, L1_NODES * INPUT_SIZE);
+        SGD_update_params(alpha, l2_weights, l2_grads, OUT_NODES * L1_NODES);
+        
+        if ( (i + 1) % period == 0 ) {
+            printf("Input\n");
+            print_vec(input, 15, 0);
+            printf("Expected\n");
+            print_vec(answer, 3, 1);
+            printf("Result\n");
+            print_vec(l2_outs, 3, 6);
+            int correct_count = 0;
+            float total_loss = 0;
+            for (int j = 0; j < period; ++j) {
+                if (past_correct[j])
+                    correct_count ++;
+                total_loss += past_losses[j];
+                
+            }
+            printf("Over the past %d iterations:\n", period);
+            printf("Accuracy: %f\n", (float)correct_count / (float)period);
+            printf("Average loss: %f\n", total_loss / (float)period);
+        }
+    }
+}
+/* END Used for testing dense layers only */
+
 int main(int argc, char *argv[]) {
+    srand( 479 ); // seed PRNG for reproducible results
+    //dense_layer_test();
     interactive_loop();
     return 0;
 }

@@ -319,6 +319,17 @@ TEST_CASE( "dense layer backward pass", "[dense]" ) {
 }
 
 
+TEST_CASE( "stochastic gradient descent update params", "[dense][conv2d]" ) {
+    float eta = 0.5;
+    int N = 4;
+    float weights[N] = {0.12, -0.56, 0.39, 0.93};
+    float grads[N] = {0.2, -0.3, 0.1, 0.3};
+    SGD_update_params(eta, weights, grads, N);
+    float expect_weights[N] = {0.02, -0.41, 0.34, 0.78};
+    for (int i = 0; i < N; ++i) {
+        REQUIRE( fuzzy_equals_digits(weights[i], expect_weights[i], 5) );
+    }
+}
 
 
 

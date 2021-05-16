@@ -1,4 +1,5 @@
-
+#ifndef BX_TOKENS_H
+#define BX_TOKENS_H
 
 struct Tokens {
     char **data;
@@ -19,3 +20,5 @@ char* Tokens_at(Tokens*, int);
 bool Tokens_match_at(Tokens*, int, const char*);
 
 bool Tokens_fetch(Tokens*, const char*);
+
+#endif
