@@ -151,12 +151,12 @@ void Dense_backward(
     mat_vec_multiply_reduce_sum(pdL_pdouts_pred, weights, i_len, o_len, pdL_pdvals);
 }
 
+/**
+ * Update parameters using stochastic gradient descent.
+ */
 __host__
-void SGD_update_params(float eta, float *weights, float *grads, int len) {
-    //printf("before: %f\n", weights[0]);
-    //printf("grad: %f\n", grads[0]);
+void SGD_update_params(float alpha, float *weights, float *grads, int len) {
     for (int i = 0; i < len; ++i) {
-        weights[i] -= eta * grads[i];
+        weights[i] -= alpha * grads[i];
     }
-    //printf("after: %f\n", weights[0]);
 }

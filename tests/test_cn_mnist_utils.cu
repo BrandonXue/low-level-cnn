@@ -1,3 +1,5 @@
+#include "catch.hpp"
+
 #include "cn_mnist_utils.cu.h"
 
 TEST_CASE( "CN-MNIST integer label to one-hot vector", "[utils]" ) {

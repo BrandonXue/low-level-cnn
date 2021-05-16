@@ -1,6 +1,5 @@
 #include <float.h>
 #include <math.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -23,6 +22,23 @@ void print_vec(float *vec, int len, int precision) {
         }
     }
     printf("]\n");
+}
+
+
+/**
+ * Find the index within the vector of the highest-valued float.
+ */
+__host__
+int argmax(float *vec, int len) {
+    int arg_max = 0;
+    float max = vec[0];
+    for (int i = 0; i < len; ++i) {
+        if (vec[i] > max) {
+            max = vec[i];
+            arg_max = i;
+        }
+    }
+    return arg_max;
 }
 
 __host__

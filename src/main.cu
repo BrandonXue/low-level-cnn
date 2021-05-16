@@ -6,7 +6,7 @@
 
 // Local
 #include "cn_mnist_utils.cu.h"
-#include "layers.cu.h"
+#include "nn_layers.cu.h"
 #include "image_io.cu.h"
 #include "math.cu.h"
 #include "string.cu.h"
@@ -228,12 +228,39 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     float target_vec[15];
     // Memory for losses
     float current_loss;
-    int avg_loss_period = 2000;
-    float past_losses[avg_loss_period];
+    int summary_iterations = 500;
+    float past_losses[summary_iterations];
+    bool past_correct[summary_iterations];
 
-    // TODO
+
+    // FILE PATHS
+    const char *l1_weights_filename = "data/model/l1_weights.data";
+    const char *l2_weights_filename = "data/model/l2_weights.data";
+    const char *l3_weights_filename = "data/model/l3_weights.data";
+
     if (load) {
         printf("Loading from existing model.\n");
+        FILE *l1_weights_file = fopen(l1_weights_filename, "rb");
+        FILE *l2_weights_file = fopen(l2_weights_filename, "rb");
+        FILE *l3_weights_file = fopen(l3_weights_filename, "rb");
+        if (l1_weights_file == NULL) {
+            printf("Layer 1 weights not found. Using randomly initialized.\n");
+        } else {
+            fread(l1_weights, sizeof(float), l1_filters * l1_kernel_rows * l1_kernel_cols, l1_weights_file);
+            fclose(l1_weights_file);
+        }
+        if (l2_weights_file == NULL) {
+            printf("Layer 2 weights not found. Using randomly initialized.\n");
+        } else {
+            fread(l2_weights, sizeof(float), l2_in_nodes * l2_out_nodes, l2_weights_file);
+            fclose(l2_weights_file);
+        }
+        if (l3_weights_file == NULL) {
+            printf("Layer 3 weights not found. Using randomly initialized.\n");
+        } else {
+            fread(l3_weights, sizeof(float), l3_in_nodes * l3_out_nodes, l3_weights_file);
+            fclose(l3_weights_file);
+        }
     }
 
     int total_iters = atoi(iters);
@@ -273,14 +300,15 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
 
         // Calculate loss
         cn_mnist_target_to_vec(target_vec, target_label);
-        // sanity check: see if target vector is correct
-        //print_vec(target_vec, 15, 0);
         cat_cross_entropy(
             l3_out_nodes, target_vec, l3_vals, l3_outs,
             l3_pdL_pdvals, &current_loss
         );
-        // use last_100_losses as a ring buffer
-        past_losses[(iter % avg_loss_period)] = current_loss;
+
+        // Store aggregate measures
+        int predicted_index = argmax(l3_outs, 15);
+        past_correct[(iter % summary_iterations)] = (target_vec[predicted_index] == 1);
+        past_losses[(iter % summary_iterations)] = current_loss;
 
         // Layer 3 backward
         Dense_backward(
@@ -319,57 +347,65 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
             l1_stride_rows, l1_stride_cols, l1_filters
         );
 
-        // Lower learning rate (eta) as iterations go on
-        // Kind of like simulated annealing
-        //float eta = 0.5 - 0.4 * (float)iter / (float)total_iters;
-        float eta = 0.1 - (0.05 * (float)iter / (float)total_iters);
+        // Lower learning rate (alpha) over time.
+        // Kind of like simulated annealing.
+        float alpha = 0.1 - (0.05 * (float)iter / (float)total_iters);
 
-        //printf("before: %f, %f, %f, %f\n", l1_weights[0], l1_weights[1], l1_weights[2], l1_weights[3]);
         // Update layer 1
         SGD_update_params(
-            eta, l1_weights, l1_grads,
+            alpha, l1_weights, l1_grads,
             l1_filters * l1_kernel_rows * l1_kernel_cols
         );
-        //printf("after: %f, %f, %f, %f\n", l1_weights[0], l1_weights[1], l1_weights[2], l1_weights[3]);
-        //printf("l1 grad: %0.11f\n", l1_grads[0]);
-        //printf("before: %f, %f, %f, %f\n", l2_weights[0], l2_weights[1], l2_weights[2], l2_weights[3]);
         // Update layer 2
         SGD_update_params(
-            eta, l2_weights, l2_grads,
+            alpha, l2_weights, l2_grads,
             l2_in_nodes * l2_out_nodes
         );
-        //printf("after: %f, %f, %f, %f\n", l2_weights[0], l2_weights[1], l2_weights[2], l2_weights[3]);
-
         // Update layer 3
         SGD_update_params(
-            eta, l3_weights, l3_grads,
+            alpha, l3_weights, l3_grads,
             l3_in_nodes * l3_out_nodes
         );
 
-        if ( (iter+1) % avg_loss_period == 0) {
+        // This will execute once every summary_iterations.
+        if ( (iter+1) % summary_iterations == 0) {
             // important sanity check: make sure offsets are correct.
             // images and metadata should make sense and match.
             flt_img_to_ascii(data+float_offset, 64, 64, 1);
             printf(
-                "Image: %s, correct label:  %d\n",
+                "Image file: %s. Correct label:  %d\n\n",
                 metadata[sample_index].input,
                 metadata[sample_index].label
             );
-            printf("Prediction:\n");
-            print_vec(l3_outs, 15, 3);
+
+            // Pretty print the predictions table
+            print_predictions(l3_outs);
+            
             float avg_loss = 0;
-            for (int i = 0; i < avg_loss_period; ++i) {
+            float accuracy = 0;
+            for (int i = 0; i < summary_iterations; ++i) {
                 avg_loss += past_losses[i];
+                accuracy += (past_correct[i] ? 1 : 0);
             }
-            avg_loss /= avg_loss_period;
-            printf("Current iteration: %d\n", iter);
-            printf("Average loss over last %d iterations: %f\n", avg_loss_period, avg_loss);
+            avg_loss /= summary_iterations;
+            accuracy = accuracy * 100 /  summary_iterations;
+            printf("\nCurrent iteration: %d\n", iter + 1);
+            printf("Average loss over last %d iterations: %f\n", summary_iterations, avg_loss);
+            printf("Accuracy of last %d iterations: %0.2f%%\n", summary_iterations, accuracy);
         }
     }
     
-    // TODO
     if (save) {
-        printf("The model will be saved at the end of the session.\n");
+        printf("Saving model.\n");
+        FILE *l1_weights_file = fopen(l1_weights_filename, "wb");
+        FILE *l2_weights_file = fopen(l2_weights_filename, "wb");
+        FILE *l3_weights_file = fopen(l3_weights_filename, "wb");
+        fwrite(l1_weights, sizeof(float), l1_filters * l1_kernel_rows * l1_kernel_cols, l1_weights_file);
+        fwrite(l2_weights, sizeof(float), l2_in_nodes * l2_out_nodes, l2_weights_file);
+        fwrite(l3_weights, sizeof(float), l3_in_nodes * l3_out_nodes, l3_weights_file);
+        fclose(l1_weights_file);
+        fclose(l2_weights_file);
+        fclose(l3_weights_file);
     }
 }
 
@@ -444,6 +480,10 @@ void generate_answer(float *input, float *answer) {
     }
 }
 
+/**
+ * For testing the performance of two dense layers on predicting
+ * a very basic function.
+ */
 void dense_layer_test() {
     int INPUT_SIZE = 15, L1_NODES = 6, OUT_NODES = 3;
     float input[INPUT_SIZE];
@@ -553,6 +593,8 @@ void dense_layer_test() {
     }
 }
 /* END Used for testing dense layers only */
+
+
 
 int main(int argc, char *argv[]) {
     srand( 479 ); // seed PRNG for reproducible results

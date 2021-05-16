@@ -42,6 +42,13 @@ TEST_CASE( "fuzzy equals rejects exceeding tolerance", "[math]" ) {
     REQUIRE( !fuzzy_equals_digits(0.0000000001, 0.00000000004, 10) );
 }
 
+TEST_CASE( "vector argmax", "[tensor]" ) {
+    float input[5] = {-0.1359, 0.0943492, 0.281114, -0.9814, 0.68318};
+    int answer = argmax(input, 5);
+    int expect = 4;
+    REQUIRE(expect == answer);
+}
+
 TEST_CASE( "vector and vector element-wise multiplication", "[math]" ) {
     float a[5] = {2.1, 1.8, 1.2, 0.4, 0.8};
     float b[5] = {1.0, 1.1, 2.4, 3.1, 1.9};

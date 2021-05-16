@@ -4,6 +4,9 @@
 /* ============================= Math Utilities =============================*/
 
 __host__
+int argmax(float*, int);
+
+__host__
 bool fuzzy_equals_digits(double, double, int);
 
 __host__

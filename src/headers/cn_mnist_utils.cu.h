@@ -4,4 +4,7 @@
 __host__
 void cn_mnist_target_to_vec(float*, int);
 
+__host__
+void print_predictions(float*);
+
 #endif

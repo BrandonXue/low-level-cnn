@@ -1,6 +1,6 @@
 #include "catch.hpp"
 
-#include "layers.cu.h"
+#include "nn_layers.cu.h"
 #include "math.cu.h"
 
 TEST_CASE( "valid padding dimension calculation", "[conv2d]" ) {
