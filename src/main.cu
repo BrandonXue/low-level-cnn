@@ -5,8 +5,8 @@
 #include <cuda.h>
 
 // Local
+#include "cn_mnist_utils.cu.h"
 #include "layers.cu.h"
-#include "loss_func.cu.h"
 #include "image_io.cu.h"
 #include "math.cu.h"
 #include "string.cu.h"

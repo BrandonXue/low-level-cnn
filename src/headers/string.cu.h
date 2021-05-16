@@ -1,5 +1,5 @@
-#ifndef BX_TOKENS_H
-#define BX_TOKENS_H
+#ifndef BX_STRING_H
+#define BX_STRING_H
 
 struct Tokens {
     char **data;

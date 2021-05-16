@@ -1,5 +1,5 @@
-#ifndef CONV_2D_CU_H
-#define CONV_2D_CU_H
+#ifndef BX_NN_LAYERS_H
+#define BX_NN_LAYERS_H
 
 enum PadType{PAD_VALID, PAD_SAME_ZEROS};
 

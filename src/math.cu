@@ -194,58 +194,80 @@ void vec_relu_and_deriv(float *out, float *out_deriv, float *in, int len) {
     }
 }
 
+// I am using the exact fuzz factor used by Keras and TF
+static const float EPSILON_FUZZ = 0.0000001;
+
 /**
- * Vectorized softmax and its Jacobian.
- * Since softmax takes a vector, it doesn't have a singlular scalar derivative.
- */ /*
+ * Calculate the mean squared error.
+ * @param y_true Pointer to an array of actual y values.
+ * @param y_pred Pointer to an array of observed y values.
+ * @len The length of both y_true and y_pred.
+ */
 __host__
-void vec_softmax_and_deriv(float *out, float *out_deriv, float *in, int len) {
-    // softmax(x) = softmax(x - C)
-    // For numeric stability, subtract the max from each element
-    float in_max = in[0];
+float  mse(float *y_true, float *y_pred, int len) {
+    float sse = 0;
     for (int i = 0; i < len; ++i) {
-        if (in[i] > in_max) {
-            in_max = in[i];
-        }
+        // Error
+        float temp  = y_true[i] - y_pred[i];
+        // Squared error
+        temp *= temp;
+        // Sum up the squared error (TODO: overflow underflow protection, FMA)
+        sse += temp;
     }
-    // Find the denominator (sum of e^x for all x in inputs)
-    float in_adjusted[len]; // inputs offset by C, then taken as exponential
+    // Mean squared error
+    return sse / len;
+}
+
+
+/**
+ * Categorical Cross Entropy Loss. Assumes that the inputs
+ * have not gone through any activation function yet, and applies
+ * the softmax activation as part of this function call.
+ * Also calculates the change in loss wrt the values before activation.
+ */
+__host__
+void cat_cross_entropy(
+    int len, float *y_true, float *vals, float *outs, float *pdL_pdval, float *loss
+) {
+    // softmax(x) = softmax(x - C)
+    // For numeric stability, we will subtract the max from each element.
+    // First find the max of the un-activated values.
+    float vals_max = vals[0];
+    for (int i = 0; i < len; ++i) {
+        if (vals[i] > vals_max) {
+            vals_max = vals[i];
+        }
+        //printf("in softmax val[%d] = %f\n", i, vals[i]);
+    }
+
+    // Find the numerator and the denominator
+    // Numerator is e^(x - max_x) denominator is the summation of all the numerators
     float sum_exp = 0;
     for (int i = 0; i < len; ++i) {
-        in_adjusted[i] = exp(in[i] - in_max);
-        sum_exp += in_adjusted;
+        outs[i] = exp(vals[i] - vals_max);
+        sum_exp += outs[i];
     }
     // In the unlikely event the denom is zero, add fuzz factor
     if (sum_exp == 0) {
-        sum_exp = 0.0000001;
+        sum_exp = EPSILON_FUZZ;
     }
-    // Calculate the softmaxes by dividing e^x by the denominator
+    // Finish calculating the softmaxes by dividing each element by the denominator
     for (int i = 0; i < len; ++i) {
-        out[i] = in_adjusted[i] / sum_exp;
+        outs[i] = outs[i] / sum_exp;
     }
 
-    // Calculate the Jacobian matrix
-    // Each row contains the partial derivatives of one softmax output  S_i
-
-    // Each column contains the before-activation value that the partial derivative
-    // is being taken with respect to.
-    //
-    //  [∂S1/∂v1 ∂S1/∂v2 ... ∂S1/∂vN
-    //   ∂S2/∂v1 ∂S2/∂v2 ... ∂S2/∂vN
-    //     ...     ...   ...   ...
-    //   ∂SN/∂v1 ∂SN/∂v2 ... ∂SN/∂vN]
-    //
-    // This means dotting a row vector with partial derivative of loss wrt the activation values
-    // with the Jacobian yields the change 
-    // [∂L/∂S1 ∂L/∂S2 ... ∂L/∂SN]
-    for (int j = 0; j < len; ++j) {
-        for (int i = 0; i < len; ++i) {
-            int index = j * len + i; // i is col, j is row
-            if (i == j) {
-                out_deriv[index] = out[i] * (1 - out[i]);
-            } else {
-                out_deriv[index] = -out[i] * out[j];
-            }
-        }
+    // Calculate the Cross Entropy Loss, -Σ (y_true * log(softmax(vals))
+    *loss = 0;
+    for (int i = 0; i < len; ++i) {
+        *loss += y_true[i] * log(outs[i]);
     }
-}*/
+    // There is a negative one coefficient.
+    *loss *= -1;
+
+    // Calculate the gradient
+    // For each element, the derivative is softmax(x)_i  -  y_true_i
+    for (int i = 0; i < len; ++i) {
+        pdL_pdval[i] = outs[i] - y_true[i];
+    }
+}
+

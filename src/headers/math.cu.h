@@ -1,20 +1,24 @@
-#ifndef BX_MATH_CU_H
-#define BX_MATH_CU_H
+#ifndef BX_MATH_H
+#define BX_MATH_H
+
+/* ============================= Math Utilities =============================*/
 
 __host__
-void print_vec(float*, int, int);
+bool fuzzy_equals_digits(double, double, int);
 
 __host__
 float rand_float(float, float);
 
 __host__
-void random_init(float*, int, float, float);
-
-__host__
 double round_digits(double, int);
 
+/* ======================== Vector/Matrix Operations ========================*/
+
 __host__
-bool fuzzy_equals_digits(double, double, int);
+void print_vec(float*, int, int);
+
+__host__
+void random_init(float*, int, float, float);
 
 __host__
 void vec_relu_and_deriv(float*, float*, float*, int);
@@ -42,5 +46,13 @@ void vec_vec_multiply(float*, float*, float*, int);
 
 __host__
 void vec_mat_dot(float*, float*, float*, int, int);
+
+/* ============================= Loss functions =============================*/
+
+__host__
+float mse(float*, float*, int);
+
+__host__
+void cat_cross_entropy(int, float*, float*, float*, float*, float*);
 
 #endif

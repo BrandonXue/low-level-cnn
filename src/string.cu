@@ -4,16 +4,21 @@
 
 #include <string.cu.h>
 
-/* Tokens
+/*
+ * Tokens
+ * A pseudo-class in object-oriented style for managing
+ * string tokens from the command-line. 
+
 struct Tokens {
     char **data;
     int count;
     int size;
 };
+
 */
 
 /**
- * Tokens Constructor
+ * Tokens "Constructor"
  */
 Tokens* Tokens_create() {
     Tokens *toks = (Tokens*)malloc(sizeof(Tokens));
@@ -24,7 +29,7 @@ Tokens* Tokens_create() {
 }
 
 /**
- * Tokens Destructor
+ * Tokens "Destructor"
  */
 Tokens* Tokens_destroy(Tokens *toks) {
     for (int i = 0; i < toks->count; ++i) {
@@ -39,7 +44,7 @@ Tokens* Tokens_destroy(Tokens *toks) {
 }
 
 /**
- * Appends a copy of new_tok to toks.
+ * Appends a copy of the string token to toks.
  */
 bool Tokens_append(Tokens *toks, const char *new_tok) {
     if (toks == NULL || toks->data == NULL) {
@@ -64,7 +69,7 @@ bool Tokens_append(Tokens *toks, const char *new_tok) {
 }
 
 /**
- * Getter for convenience
+ * Get the total number of tokens.
  */
 int Tokens_get_count(Tokens *toks) {
     if (toks == NULL) {
@@ -74,7 +79,7 @@ int Tokens_get_count(Tokens *toks) {
 }
 
 /**
- * Getter for convenience
+ * Get the string token at the given index.
  */
 char* Tokens_at(Tokens *toks, int index) {
     if (toks == NULL || index >= toks->count) {
@@ -84,7 +89,7 @@ char* Tokens_at(Tokens *toks, int index) {
 }
 
 /**
- * Check if a token matches any of the tokens in toks.
+ * Check if a string matches the token at the given index.
  */
 bool Tokens_match_at(Tokens *toks, int index, const char *str) {
     // Tidy up leading whitespace in str
@@ -107,12 +112,11 @@ bool Tokens_match_at(Tokens *toks, int index, const char *str) {
         return false;
     }
     // Compare the strings
-    //printf("Comparing %s with %s\n", toks->data[index], buf);
     return strcmp(toks->data[index], buf) == 0;
 }
 
 /**
- * Populate Tokens with a string.
+ * Populate the Tokens struct with a string to be tokenized.
  */
 bool Tokens_fetch(Tokens *toks, const char *line) {
     if (toks == NULL || toks->data == NULL || line == NULL) {
