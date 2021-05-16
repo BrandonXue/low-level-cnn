@@ -1,6 +1,6 @@
 // Standard
 #include <stdio.h>
-#include <time.h>
+#include <sys/time.h>
 
 // Third-party
 #include <cuda.h>
@@ -264,7 +264,8 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     float past_losses[summary_iterations];
     bool past_correct[summary_iterations];
 
-    clock_t begin_time = clock();
+    struct timespec begin_time, end_time;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &begin_time);
 
     int total_iters = atoi(iters);
     for (int iter = 0; iter < total_iters; ++iter) {
@@ -374,8 +375,10 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         if ( (iter+1) % summary_iterations == 0) {
 
             // Stop the clock for this period, and calculate time spent.
-            clock_t end_time = clock();
-            double time_over_period = (double)(end_time - begin_time) / CLOCKS_PER_SEC;
+            clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
+            uint64_t time_over_period = // in microseconds
+                (end_time.tv_sec - begin_time.tv_sec) * 1000000
+                + (end_time.tv_nsec - begin_time.tv_nsec) / 1000;
 
             // important sanity check: make sure offsets are correct.
             // images and metadata should make sense and match.
@@ -400,11 +403,11 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
             printf("\nCurrent iteration: %d\n", iter + 1);
             printf("Average loss over last %d iterations: %f\n", summary_iterations, avg_loss);
             printf("Accuracy over last %d iterations: %0.2f%%\n", summary_iterations, accuracy);
-            printf("Time measured by clock() processing the last %d iterations: %0.2fms\n",
-                summary_iterations, 1000 * time_over_period); 
+            printf("Time processing the last %d iterations: %0.2fms\n",
+                summary_iterations, time_over_period / 1000.0); 
 
             // Mark the time for the next period
-            begin_time = clock();
+            clock_gettime(CLOCK_MONOTONIC_RAW, &begin_time);
         }
     }
     
