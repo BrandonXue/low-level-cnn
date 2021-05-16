@@ -1,7 +1,9 @@
 bin/*
-docs/*
+docs/Xue_479_Project2.pages
 obj/*
 scripts/preview.sh
 tests/bin/*
 tests/obj/*
 data/chinese_mnist/processed.data
+gmon.out
+
