@@ -11,7 +11,7 @@
 #include "math.cu.h"
 #include "string.cu.h"
 
-enum Command{EXIT, HELP, PREPROCESS, SHOW, TRAIN, UNKNOWN};
+enum Command{EXIT, HELP, PREDICT, PREPROCESS, SHOW, TRAIN, UNKNOWN};
 
 Command get_command(Tokens *toks) {
     if (Tokens_match_at(toks, 0, "exit") ||
@@ -22,6 +22,9 @@ Command get_command(Tokens *toks) {
         Tokens_match_at(toks, 0, "?") ||
         Tokens_match_at(toks, 0, "h")) {
         return HELP;
+    }
+    if (Tokens_match_at(toks, 0 , "predict")) {
+        return PREDICT;
     }
     if (Tokens_match_at(toks, 0, "preprocess")) {
         return PREPROCESS;
@@ -105,6 +108,33 @@ void cmd_show(Tokens *toks, float *data) {
     }
 }
 
+void cmd_predict(Tokens *toks) {
+    if (Tokens_get_count(toks) < 2) {
+        printf("Error: Specify an image file to predict.\n");
+        return;
+    }
+    int status;
+    char buf[128];
+    char prefix[] = "data/chinese_mnist/data/";
+    strcpy(buf, prefix);
+    strcat(buf, Tokens_at(toks, 1));
+    unsigned char *image = load_img_carefully(
+        buf, 64, 64, 1, &status
+    );
+    if (status == 0) {
+        // process and predict
+        float *image_flt = (float*)malloc(64 * 64 * sizeof(float));
+        for (int pixel = 0; pixel < 64 * 64; ++pixel) {
+            image_flt[pixel] = (float)image[pixel] / 255.0;
+        }
+        flt_img_to_ascii(image_flt, 64, 64, 1);
+        free(image_flt);
+    } else {
+        printf("Error: Image could not be loaded: %s\n", buf);
+    }
+    free(image);
+}
+
 void cmd_preprocess(InputLabel **metadata, float **data) {
     const char *filepath = "data/chinese_mnist/processed.data";
     
@@ -137,12 +167,12 @@ void cmd_preprocess(InputLabel **metadata, float **data) {
 int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     if (metadata == NULL || data == NULL) {
         printf("Error: Preprocess the images first. (This will also load the metadata.)\n");
-        return EXIT_FAILURE;
+        return 0;
     } 
     char *iters = Tokens_at(toks, 1);
     if (iters == NULL || atoi(iters) <= 0) {
         printf("Error: Enter a valid number of iterations.\n");
-        return EXIT_FAILURE;
+        return 0;
     } else {
         printf("Model will train for %d iterations.\n", atoi(iters));
     }
@@ -184,10 +214,10 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         cudaMalloc(&dev_l1_pdL_pdvals, l1_filters * l1_out_rows * l1_out_cols * sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dev_l1_pdL_pdouts_prev, l1_in_rows * l1_in_cols * sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dev_l1_weights, l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float)) != cudaSuccess ||
-        cudaMalloc(&dev_l1_grads, l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float)) != cudaSuccess)
+        cudaMalloc(&dev_l1_grads, l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float)) != cudaSuccess) {
+        printf("Could not allocate layer 1 memory on device.\n");
         return EXIT_FAILURE;
-    else
-        printf("Allocated layer 1 memory on device.\n");
+    }
 
     /** Layer2: Dense Layer **/
 
@@ -212,10 +242,10 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         cudaMalloc(&dev_l2_douts_dvals, l2_out_nodes* sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dev_l2_pdL_pdvals, l2_out_nodes * sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dev_l2_weights, l2_in_nodes * l2_out_nodes * sizeof(float)) != cudaSuccess ||
-        cudaMalloc(&dev_l2_grads, l2_in_nodes * l2_out_nodes * sizeof(float)) != cudaSuccess)
+        cudaMalloc(&dev_l2_grads, l2_in_nodes * l2_out_nodes * sizeof(float)) != cudaSuccess) {
+        printf("Could not allocate layer 2 memory on device.\n");
         return EXIT_FAILURE;
-    else
-        printf("Allocated layer 2 memory on device.\n");
+    }
 
     /** Layer3: Dense Layer (Output) **/
 
@@ -245,10 +275,10 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         cudaMalloc(&dev_l3_douts_dvals, l3_out_nodes* sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dev_l3_pdL_pdvals, l3_out_nodes * sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dev_l3_weights, l3_in_nodes * l3_out_nodes * sizeof(float)) != cudaSuccess ||
-        cudaMalloc(&dev_l3_grads, l3_in_nodes * l3_out_nodes * sizeof(float)) != cudaSuccess)
+        cudaMalloc(&dev_l3_grads, l3_in_nodes * l3_out_nodes * sizeof(float)) != cudaSuccess) {
+        printf("Could not allocate layer 3 memory on device.\n");
         return EXIT_FAILURE;
-    else
-        printf("Allocated layer 3 memory on device.\n");
+    }
 
     // Copy all data to device
     float *dev_data;
@@ -565,6 +595,10 @@ void interactive_loop() {
         else if (cmd == EXIT) {
             break;
         }
+        
+        else if (cmd == PREDICT) {
+            cmd_predict(toks);
+        }
 
         else if (cmd == PREPROCESS) {
             cmd_preprocess(&metadata, &chinese_mnist_processed);
@@ -584,146 +618,8 @@ void interactive_loop() {
     }
 }
 
-
-/* START: Used for testing dense layers only */
-void generate_input(float *buffer, int len) {
-    for (int i = 0; i < len; ++i) {
-        buffer[i] = (float)(rand() % 10);
-    }
-}
-
-void generate_answer(float *input, float *answer) {
-    float sum1 = input[0] + input[1] + input[2] + input[3] + input[4];
-    float sum2 = input[5] + input[6] + input[7] + input[8] + input[9];
-    float sum3 = input[10] + input[11] + input[12] + input[13] + input[14];
-    if (sum1 > sum2 && sum1 > sum3) {
-        answer[0] = 1; answer[1] = 0; answer[2] = 0;
-    } else if (sum2 > sum1 && sum2 > sum3) {
-        answer[0] = 0; answer[1] = 1; answer[2] = 0;
-    } else {
-        answer[0] = 0; answer[1] = 0; answer[2] = 1;
-    }
-}
-
-/**
- * For testing the performance of two dense layers on predicting
- * a very basic function.
- */
-void dense_layer_test() {
-    int INPUT_SIZE = 15, L1_NODES = 6, OUT_NODES = 3;
-    float input[INPUT_SIZE];
-    float answer[OUT_NODES];
-    float l1_outs[L1_NODES];
-    float l1_vals[L1_NODES];
-    float l1_douts_dvals[L1_NODES];
-    float l1_pdL_pdvals[L1_NODES];
-    float l1_pdL_pdouts[L1_NODES];
-    float l1_pdL_pdouts_prev[INPUT_SIZE];
-    float l1_weights[L1_NODES * INPUT_SIZE];
-    random_init(l1_weights, L1_NODES * INPUT_SIZE, -1, 1);
-    float l1_grads[L1_NODES * INPUT_SIZE];
-
-    float l2_outs[OUT_NODES];
-    float l2_vals[OUT_NODES];
-    float l2_douts_dvals[OUT_NODES];
-    float l2_pdL_pdvals[OUT_NODES];
-    float l2_pdL_pdouts[OUT_NODES];
-    float l2_weights[OUT_NODES * L1_NODES];
-    random_init(l2_weights, OUT_NODES * L1_NODES, -1, 1);
-    float l2_grads[OUT_NODES * L1_NODES];
-
-    float current_loss;
-    int period = 1000;
-    float past_losses[period];
-    bool past_correct[period];
-    int total_iterations = 10000;
-    for (int i = 0; i < total_iterations; ++i) {
-        generate_input(input, INPUT_SIZE);
-        generate_answer(input, answer);
-        Dense_forward(
-            l1_outs, L1_NODES,
-            l1_vals,
-            l1_douts_dvals,
-            input, INPUT_SIZE,
-            l1_weights,
-            0 // sigmoid
-        );
-        Dense_forward(
-            l2_outs, OUT_NODES,
-            l2_vals,
-            l2_douts_dvals,
-            l1_outs, L1_NODES,
-            l2_weights,
-            2 // no activation
-        );
-        cat_cross_entropy(
-            OUT_NODES, answer, l2_vals, l2_outs,
-            l2_pdL_pdvals, &current_loss
-        );
-        //printf("l2outs %f %f %f\n", l2_outs[0], l2_outs[1], l2_outs[2]);
-        past_losses[(i % period)] = current_loss;
-        bool current_correct = false;
-        if (l2_outs[0] > l2_outs[1] && l2_outs[0] > l2_outs[2] && answer[0] == 1)
-            current_correct = true;
-        else if (l2_outs[1] > l2_outs[0] && l2_outs[1] > l2_outs[2] && answer[1] == 1)
-            current_correct = true;
-        else if (answer[2] == 1)
-            current_correct = true;
-        past_correct[(i % period)] = current_correct;
-         Dense_backward(
-            OUT_NODES,
-            l2_pdL_pdouts,
-            l2_douts_dvals,
-            l2_pdL_pdvals,
-            l1_pdL_pdouts,
-            l1_outs, L1_NODES,
-            l2_weights,
-            l2_grads,
-            2
-        );
-          Dense_backward(
-            L1_NODES,
-            l1_pdL_pdouts,
-            l1_douts_dvals,
-            l1_pdL_pdvals,
-            l1_pdL_pdouts_prev,
-            input, INPUT_SIZE,
-            l1_weights,
-            l1_grads,
-            0
-        );
-        float alpha = 0.1 - 0.05 * ((float)i / (float)total_iterations);
-        SGD_update_params(alpha, l1_weights, l1_grads, L1_NODES * INPUT_SIZE);
-        SGD_update_params(alpha, l2_weights, l2_grads, OUT_NODES * L1_NODES);
-        
-        if ( (i + 1) % period == 0 ) {
-            printf("Input\n");
-            print_vec(input, 15, 0);
-            printf("Expected\n");
-            print_vec(answer, 3, 1);
-            printf("Result\n");
-            print_vec(l2_outs, 3, 6);
-            int correct_count = 0;
-            float total_loss = 0;
-            for (int j = 0; j < period; ++j) {
-                if (past_correct[j])
-                    correct_count ++;
-                total_loss += past_losses[j];
-                
-            }
-            printf("Over the past %d iterations:\n", period);
-            printf("Accuracy: %f\n", (float)correct_count / (float)period);
-            printf("Average loss: %f\n", total_loss / (float)period);
-        }
-    }
-}
-/* END Used for testing dense layers only */
-
-
-
 int main(int argc, char *argv[]) {
     srand( 479 ); // seed PRNG for reproducible results
-    //dense_layer_test();
     interactive_loop();
     return 0;
 }
