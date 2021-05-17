@@ -52,22 +52,22 @@ TEST_CASE( "vector argmax", "[tensor]" ) {
 TEST_CASE( "vector and vector element-wise multiplication", "[math]" ) {
     float a[5] = {2.1, 1.8, 1.2, 0.4, 0.8};
     float b[5] = {1.0, 1.1, 2.4, 3.1, 1.9};
-    float c[5] = {0.3, 0.1, 4.1, 2.3, 1.4};
     float resbuf_ab[5];
-    float resbuf_bc[5];
-    float resbuf_ac[5];
     float expect_ab[5] = {2.1, 1.98, 2.88, 1.24, 1.52};
-    float expect_bc[5] = {0.3, 0.11, 9.84, 7.13, 2.66};
-    float expect_ac[5] = {0.63, 0.18, 4.92, 0.92, 1.12};
-    
-    vec_vec_multiply(resbuf_ab, a, b, 5);
-    vec_vec_multiply(resbuf_bc, b, c, 5);
-    vec_vec_multiply(resbuf_ac, a, c, 5);
+    float *devA, *devB, *devRes;
+    cudaMalloc(&devA, 5 * sizeof(float));
+    cudaMalloc(&devB, 5 * sizeof(float));
+    cudaMalloc(&devRes, 5 * sizeof(float));
+    cudaMemcpy(devA, a, 5 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devB, b, 5 * sizeof(float), cudaMemcpyHostToDevice);
+
+    vec_vec_multiply(devRes, devA, devB, 5);
+
+    cudaMemcpy(resbuf_ab, devRes, 5 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devA); cudaFree(devB); cudaFree(devRes);
 
     for (int i = 0; i < 5; ++i) {
         REQUIRE( fuzzy_equals_digits(resbuf_ab[i], expect_ab[i], 4) );
-        REQUIRE( fuzzy_equals_digits(resbuf_bc[i], expect_bc[i], 4) );
-        REQUIRE( fuzzy_equals_digits(resbuf_ac[i], expect_ac[i], 4) );
     }
 }
 
@@ -80,46 +80,23 @@ TEST_CASE( "row vector dotted with matrix", "[math]") {
                    3.5, 9.9, 1.4};
     int M = 5, N = 3;
     float out[N];
-    vec_mat_dot(out, v, A, M, N);
-
     float expect_out[N] = {32.9300000, 63.9300000, 22.6900000};
+
+    float *devOut, *devA, *devV;
+    cudaMalloc(&devOut, N * sizeof(float));
+    cudaMalloc(&devV, M * sizeof(float));
+    cudaMalloc(&devA, M * N * sizeof(float));
+    cudaMemcpy(devV, v, M * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devA, A, M * N * sizeof(float), cudaMemcpyHostToDevice);
+
+    vec_mat_dot(devOut, devV, devA, M, N);
+
+    cudaMemcpy(out, devOut, N * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(devOut); cudaFree(devV); cudaFree(devA);
+
     for (int i = 0; i < N; ++i) {
         REQUIRE( fuzzy_equals_digits(out[i], expect_out[i], 4) );
-    }
-}
-
-TEST_CASE( "matrix columns multiplied by vector element-wise", "[math]" ) {
-    float A[20] = {1, 2, 3, 4,
-                   4, 2, 1, 1,
-                   3, 2, 2, 3,
-                   1, 3, 1, 1,
-                   1, 1, 1, 1};
-
-    float v[4] = {3, 2, 2, 1};
-    float resbuf[20];
-    float expect[20] = { 3, 4, 6, 4,
-                        12, 4, 2, 1,
-                         9, 4, 4, 3,
-                         3, 6, 2, 1,
-                         3, 2, 2, 1};
-
-    mat_vec_multiply(resbuf, A, 5, 4, v);
-    for (int i = 0; i < 20; ++i) {
-        REQUIRE( resbuf[i] == expect[i] );
-    }
-}
-
-TEST_CASE( "matrix reduce sum all elements in the same row", "[math]" ) {
-    float A[20] = {1, 2, 3, 4,
-                   4, 2, 1, 1,
-                   3, 2, 2, 3,
-                   1, 3, 1, 1,
-                   1, 1, 1, 1};
-    float resbuf[5];
-    float expected[5] = {10, 8, 10, 6, 4};
-    mat_reduce_row_sum(resbuf, A, 5, 4);
-    for (int i = 0; i < 5; ++i) {
-        REQUIRE( resbuf[i] == expected[i] );
     }
 }
 
@@ -132,7 +109,18 @@ TEST_CASE( "vector vector outer product", "[math]" ) {
                           6, 9, 9, 3, 12,
                           2, 3, 3, 1, 4,
                           4, 6, 6, 2, 8};
-    vec_vec_outer(resbuf, a, b, 5, 5);
+    float *devA, *devB, *devRes;
+    cudaMalloc(&devA, 5 * sizeof(float));
+    cudaMalloc(&devB, 5 * sizeof(float));
+    cudaMalloc(&devRes, 25 * sizeof(float));
+    cudaMemcpy(devA, a, 5 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devB, b, 5 * sizeof(float), cudaMemcpyHostToDevice);
+    
+    vec_vec_outer(devRes, devA, devB, 5, 5);
+    
+    cudaMemcpy(resbuf, devRes, 25 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devA); cudaFree(devB); cudaFree(devRes);
+
     for (int i = 0; i < 25; ++i) {
         REQUIRE( resbuf[i] == expected[i] );
     }
@@ -154,7 +142,19 @@ TEST_CASE( "vectorized sigmoid and first derivative", "[math]" ) {
     float out_deriv[5];
     float expect_out[5] = {0.6224593312, 0.5299640518, 0.7685247835, 0.7190996574, 0.8005922432};
     float expect_out_deriv[5] = {0.2350037122, 0.2491021556, 0.1778944406, 0.2019953401, 0.1596443033};
-    vec_sigmoid_and_deriv(out, out_deriv, in, 5);
+    
+    float *devIn, *devOut, *devOutDeriv;
+    cudaMalloc(&devIn, 5 * sizeof(float));
+    cudaMalloc(&devOut, 5 * sizeof(float));
+    cudaMalloc(&devOutDeriv, 5 * sizeof(float));
+    cudaMemcpy(devIn, in, 5 * sizeof(float), cudaMemcpyHostToDevice);
+    
+    vec_sigmoid_and_deriv(devOut, devOutDeriv, devIn, 5);
+    
+    cudaMemcpy(out, devOut, 5 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(out_deriv, devOutDeriv, 5 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devIn); cudaFree(devOut); cudaFree(devOutDeriv);
+
     for (int i = 0; i < 5; ++i) {
         REQUIRE( fuzzy_equals_digits(out[i], expect_out[i], 6) );
         REQUIRE( fuzzy_equals_digits(out_deriv[i], expect_out_deriv[i], 6) );
@@ -167,14 +167,26 @@ TEST_CASE( "vectorized ReLU and first derivative", "[math]" ) {
     float out_deriv[5];
     float expect_out[5] = {1.2, 0, 5.2, 0, 0.3};
     float expect_out_deriv[5] = {1, 0, 1, 0, 1};
-    vec_relu_and_deriv(out, out_deriv, in, 5);
+    
+    float *devIn, *devOut, *devOutDeriv;
+    cudaMalloc(&devIn, 5 * sizeof(float));
+    cudaMalloc(&devOut, 5 * sizeof(float));
+    cudaMalloc(&devOutDeriv, 5 * sizeof(float));
+    cudaMemcpy(devIn, in, 5 * sizeof(float), cudaMemcpyHostToDevice);
+    
+    vec_relu_and_deriv(devOut, devOutDeriv, devIn, 5);
+    
+    cudaMemcpy(out, devOut, 5 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(out_deriv, devOutDeriv, 5 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devIn); cudaFree(devOut); cudaFree(devOutDeriv);
+
     for (int i = 0; i < 5; ++i) {
         REQUIRE( fuzzy_equals_digits(out[i], expect_out[i], 9) );
         REQUIRE( fuzzy_equals_digits(out_deriv[i], expect_out_deriv[i], 9) );
     }
 }
 
-TEST_CASE( "matrix vector multiply then reduce sum, combined operation", "[math]" ) {
+TEST_CASE( "matrix dotted with column vector", "[math]" ) {
     int input_nodes = 4, output_nodes = 2;
     float weights[input_nodes * output_nodes] =
         {  0.3,  0.12,
@@ -184,7 +196,17 @@ TEST_CASE( "matrix vector multiply then reduce sum, combined operation", "[math]
     float pdL_pdvals[output_nodes] = {0.51, 0.82};
     float pdL_pdout_pred[input_nodes];
 
-    mat_vec_multiply_reduce_sum(pdL_pdout_pred, weights, input_nodes, output_nodes, pdL_pdvals);
+    float *devVec, *devMat, *devRes;
+    cudaMalloc(&devVec, output_nodes * sizeof(float));
+    cudaMalloc(&devMat, input_nodes * output_nodes * sizeof(float));
+    cudaMalloc(&devRes, input_nodes * sizeof(float));
+    cudaMemcpy(devMat, weights, input_nodes * output_nodes * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devVec, pdL_pdvals, output_nodes * sizeof(float), cudaMemcpyHostToDevice); 
+    
+    mat_vec_dot(devRes, devMat, input_nodes, output_nodes, devVec);
+    
+    cudaMemcpy(pdL_pdout_pred, devRes, input_nodes * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devVec); cudaFree(devMat); cudaFree(devRes);
 
     float expect[input_nodes] = {0.2514, 0.1110, 0.3496, 0.1936};
 
@@ -227,5 +249,60 @@ TEST_CASE( "cross entropy works", "[loss_func]" ) {
         REQUIRE( fuzzy_equals_digits(pdL_pdval[i], expect_pdL_pdval[i], 4) );
     }
 
+
+}
+
+TEST_CASE( "one single convolution operation", "[math]" ) {
+    float image[16] =
+    {1, 2, 3, 4,
+     2, 1, 3, 3,
+     1, 1, 2, 2,
+     3, 2, 1, 1};
+    float kernel[4] =
+    {0.5, 1.0,
+     2.0, 0.5};
+    float res =
+        convolution_2d(1, 0, // output row 1, col 0. the bottom left
+                        image , 4, 4,
+                        kernel, 2, 2,
+                        2, 2);
+    REQUIRE( fuzzy_equals_digits(res, 8.5, 8) );
+    
+}
+
+TEST_CASE( "convolution operation on a whole matrix", "[math]" ) {
+    float image[16] =
+    {1, 2, 3, 4,
+     2, 1, 3, 3,
+     1, 1, 2, 2,
+     3, 2, 1, 1};
+    float kernel[4] =
+    {0.5, 1.0,
+     2.0, 0.5};
+    float res[4];
+    float expect[4] =
+    {7.0, 13.0,
+     8.5, 5.5};
+
+    float *devImage, *devKernel, *devRes;
+    cudaMalloc(&devImage, 16 * sizeof(float));
+    cudaMalloc(&devKernel, 4 * sizeof(float));
+    cudaMalloc(&devRes, 4 * sizeof(float));
+    cudaMemcpy(devImage, image, 16 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devKernel, kernel, 4 * sizeof(float), cudaMemcpyHostToDevice);
+
+    all_convolution_2d(
+        devRes,
+        devImage, 4, 4,
+        devKernel, 1, 2, 2,
+        2, 2);
+    
+    cudaMemcpy(res, devRes, 4 * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devImage); cudaFree(devKernel); cudaFree(devRes);
+
+    for (int i = 0; i < 4; ++i) {
+        //printf("res[%d]=%f, expect %f\n", i, res[i], expect[i]);
+        REQUIRE( fuzzy_equals_digits(res[i], expect[i], 8) );
+    }
 
 }

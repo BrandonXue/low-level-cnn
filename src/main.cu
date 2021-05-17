@@ -134,20 +134,24 @@ void cmd_preprocess(InputLabel **metadata, float **data) {
     }
 }
 
-void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
+int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     if (metadata == NULL || data == NULL) {
         printf("Error: Preprocess the images first. (This will also load the metadata.)\n");
-        return;
+        return EXIT_FAILURE;
     } 
     char *iters = Tokens_at(toks, 1);
     if (iters == NULL || atoi(iters) <= 0) {
         printf("Error: Enter a valid number of iterations.\n");
-        return;
+        return EXIT_FAILURE;
     } else {
         printf("Model will train for %d iterations.\n", atoi(iters));
     }
     bool load = Tokens_match_at(toks, 2, "--load");
-    bool save = Tokens_match_at(toks, 3, "--save");
+    bool save = false;
+    if (load) {
+        save = Tokens_match_at(toks, 3, "--save");
+        printf("Model will be saved at the end of training.\n");
+    }
     
     /**** Setup configuration and allocate memory for the model ****/
     
@@ -163,21 +167,27 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     // Output dimensions depend on input dimensions, kernel size, and stride
     int l1_out_rows = calc_dims_pad_valid(l1_in_rows, l1_kernel_rows, l1_stride_rows);
     int l1_out_cols = calc_dims_pad_valid(l1_in_cols, l1_kernel_cols, l1_stride_cols);
-    // Each filter produces one activation map, and each map needs to store pre-activation vals,
-    // as well as local gradients.
-    float *l1_vals =        (float*)malloc(l1_filters * l1_out_rows * l1_out_cols * sizeof(float));
-    float *l1_outs =        (float*)malloc(l1_filters * l1_out_rows * l1_out_cols * sizeof(float));
-    float *l1_pdL_pdouts =  (float*)malloc(l1_filters * l1_out_rows * l1_out_cols * sizeof(float));
-    float *l1_douts_dvals = (float*)malloc(l1_filters * l1_out_rows * l1_out_cols * sizeof(float));
-    float *l1_pdL_pdvals =  (float*)malloc(l1_filters * l1_out_rows * l1_out_cols * sizeof(float));
-    // (currently unused) The layer needs memory to calculate the upstream gradients.
-    float *l1_pdL_pdouts_prev = (float*)malloc(l1_in_rows * l1_in_cols * sizeof(float));
+    
     // Each filter has (kernel_rows * kernel_cols) weights and global gradient.
     float *l1_weights = (float*)malloc(l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float));
-    float *l1_grads =   (float*)malloc(l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float));
     // Random initialize weights
     random_init(l1_weights, l1_filters * l1_kernel_rows * l1_kernel_cols, 0, 1);
-
+    
+    // Layer 1 device
+    float *dev_l1_vals, *dev_l1_outs, *dev_l1_pdL_pdouts, *dev_l1_douts_dvals, *dev_l1_pdL_pdvals,
+          *dev_l1_pdL_pdouts_prev, *dev_l1_weights, *dev_l1_grads;
+    
+    if (cudaMalloc(&dev_l1_vals, l1_filters * l1_out_rows * l1_out_cols * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l1_outs, l1_filters * l1_out_rows * l1_out_cols * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l1_pdL_pdouts, l1_filters * l1_out_rows * l1_out_cols * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l1_douts_dvals, l1_filters * l1_out_rows * l1_out_cols * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l1_pdL_pdvals, l1_filters * l1_out_rows * l1_out_cols * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l1_pdL_pdouts_prev, l1_in_rows * l1_in_cols * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l1_weights, l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l1_grads, l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float)) != cudaSuccess)
+        return EXIT_FAILURE;
+    else
+        printf("Allocated layer 1 memory on device.\n");
 
     /** Layer2: Dense Layer **/
 
@@ -187,20 +197,25 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
 
     // Input nodes depend on the previous layer
     int l2_in_nodes = l1_filters * l1_out_rows * l1_out_cols;
-    // The nodes need pre-activation vals and activated outs.
-    float *l2_vals =        (float*)malloc(l2_out_nodes * sizeof(float));
-    float *l2_outs =        (float*)malloc(l2_out_nodes * sizeof(float));
-    float *l2_pdL_pdouts =  (float*)malloc(l2_out_nodes * sizeof(float));
-    float *l2_douts_dvals = (float*)malloc(l2_out_nodes * sizeof(float));
-    float *l2_pdL_pdvals =  (float*)malloc(l2_out_nodes * sizeof(float));
-    // The layers needs memory to calculate the upstream gradients
-    //float *l2_pdL_pdouts_prev = (float*)malloc(l2_in_nodes * sizeof(float));
+    
     // Each out-node has a weight for each in-node
     float *l2_weights = (float*)malloc(l2_in_nodes * l2_out_nodes * sizeof(float));
-    float *l2_grads =   (float*)malloc(l2_in_nodes * l2_out_nodes * sizeof(float));
     // Random initialize weights
     random_init(l2_weights, l2_in_nodes * l2_out_nodes, -1, 1);
-    
+
+    float *dev_l2_vals, *dev_l2_outs, *dev_l2_pdL_pdouts, *dev_l2_douts_dvals, *dev_l2_pdL_pdvals,
+          *dev_l2_weights, *dev_l2_grads;
+
+    if (cudaMalloc(&dev_l2_vals, l2_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l2_outs, l2_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l2_pdL_pdouts, l2_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l2_douts_dvals, l2_out_nodes* sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l2_pdL_pdvals, l2_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l2_weights, l2_in_nodes * l2_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l2_grads, l2_in_nodes * l2_out_nodes * sizeof(float)) != cudaSuccess)
+        return EXIT_FAILURE;
+    else
+        printf("Allocated layer 2 memory on device.\n");
 
     /** Layer3: Dense Layer (Output) **/
 
@@ -210,19 +225,42 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
 
     // Input nodes depend on the previous layer
     int l3_in_nodes = l2_out_nodes;
+    
     // The nodes need pre-activation vals and activated outs.
     float *l3_vals =        (float*)malloc(l3_out_nodes * sizeof(float));
     float *l3_outs =        (float*)malloc(l3_out_nodes * sizeof(float));
-    float *l3_pdL_pdouts =  (float*)malloc(l3_out_nodes * sizeof(float));
-    float *l3_douts_dvals = (float*)malloc(l3_out_nodes * sizeof(float));
     float *l3_pdL_pdvals =  (float*)malloc(l3_out_nodes * sizeof(float));
-    // The layers needs memory to calculate the upstream gradients
-    //float *l3_pdL_pdouts_prev = (float*)malloc(l3_in_nodes * sizeof(float));
+    
     // Each out-node has a weight for each in-node
     float *l3_weights = (float*)malloc(l3_in_nodes * l3_out_nodes * sizeof(float));
-    float *l3_grads =   (float*)malloc(l3_in_nodes * l3_out_nodes * sizeof(float));
     // Random initialize weights
     random_init(l3_weights, l3_in_nodes * l3_out_nodes, -1, 1);
+
+    float *dev_l3_vals, *dev_l3_outs, *dev_l3_pdL_pdouts, *dev_l3_douts_dvals, *dev_l3_pdL_pdvals,
+          *dev_l3_weights, *dev_l3_grads;
+
+    if (cudaMalloc(&dev_l3_vals, l3_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l3_outs, l3_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l3_pdL_pdouts, l3_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l3_douts_dvals, l3_out_nodes* sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l3_pdL_pdvals, l3_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l3_weights, l3_in_nodes * l3_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMalloc(&dev_l3_grads, l3_in_nodes * l3_out_nodes * sizeof(float)) != cudaSuccess)
+        return EXIT_FAILURE;
+    else
+        printf("Allocated layer 3 memory on device.\n");
+
+    // Copy all data to device
+    float *dev_data;
+    if (cudaMalloc(&dev_data, 64 * 64 * 14999 * sizeof(float)) != cudaSuccess) {
+        printf("Error allocating memory for images on device.\n");
+        return EXIT_FAILURE;
+    }
+    if (cudaMemcpy(dev_data, data, 64 * 64 * 14999 * sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess) {
+        printf("Error transferring images to device.\n");
+        return EXIT_FAILURE;
+    }
+
 
     // Memory for training targets
     float target_vec[15];
@@ -263,6 +301,29 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         }
     }
 
+    // Copy all weights to device
+    if (cudaMemcpy(dev_l1_weights, l1_weights,
+            l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float),
+            cudaMemcpyHostToDevice) != cudaSuccess) {
+        printf("Layer 1 weights failed to copy to device.\n");
+        return EXIT_FAILURE;
+    }
+    if (cudaMemcpy(dev_l2_weights, l2_weights,
+            l2_in_nodes * l2_out_nodes * sizeof(float),
+            cudaMemcpyHostToDevice) != cudaSuccess) {
+        printf("Layer 2 weights failed to copy to device.\n");
+        return EXIT_FAILURE;
+    }
+    if (cudaMemcpy(dev_l3_weights, l3_weights,
+            l3_in_nodes * l3_out_nodes * sizeof(float),
+            cudaMemcpyHostToDevice) != cudaSuccess) {
+        printf("Layer 3 weights failed to copy to device.\n");
+        return EXIT_FAILURE;
+    }
+
+    struct timespec begin_time, end_time;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &begin_time);
+
     int total_iters = atoi(iters);
     for (int iter = 0; iter < total_iters; ++iter) {
         int sample_index = rand() % 14999; // 14999 images, indices 0 - 14998
@@ -271,39 +332,60 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         
         // Layer 1 forward
         Conv2D_forward(
-            l1_outs, l1_out_rows, l1_out_cols,
-            l1_vals,
-            l1_douts_dvals,
-            data + float_offset, l1_in_rows, l1_in_cols,
-            l1_weights, l1_kernel_rows, l1_kernel_cols,
+            dev_l1_outs, l1_out_rows, l1_out_cols,
+            dev_l1_vals,
+            dev_l1_douts_dvals,
+            dev_data + float_offset, l1_in_rows, l1_in_cols,
+            dev_l1_weights, l1_kernel_rows, l1_kernel_cols,
             l1_stride_rows, l1_stride_cols, l1_filters,
             l1_activation
         );
         // Layer 2 forward
         Dense_forward(
-            l2_outs, l2_out_nodes,
-            l2_vals,
-            l2_douts_dvals,
-            l1_outs, l2_in_nodes,
-            l2_weights,
+            dev_l2_outs, l2_out_nodes,
+            dev_l2_vals,
+            dev_l2_douts_dvals,
+            dev_l1_outs, l2_in_nodes,
+            dev_l2_weights,
             l2_activation
         );
         // Layer 3 forward
         Dense_forward(
-            l3_outs, l3_out_nodes,
-            l3_vals,
-            l3_douts_dvals,
-            l2_outs, l3_in_nodes,
-            l3_weights,
+            dev_l3_outs, l3_out_nodes,
+            dev_l3_vals,
+            dev_l3_douts_dvals,
+            dev_l2_outs, l3_in_nodes,
+            dev_l3_weights,
             l3_activation
         );
 
-        // Calculate loss
-        cn_mnist_target_to_vec(target_vec, target_label);
+        /* Calculate loss */
+
+        cn_mnist_target_to_vec(target_vec, target_label); // create target one-hot vector
+
+        // Move needed data back to host
+        if (cudaMemcpy(l3_vals, dev_l3_vals, l3_out_nodes * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) {
+            printf("Error copying l3_vals back to host.\n");
+            return EXIT_FAILURE;
+        }
+
+        /* This doesn't need to be copied because it's just a working buffer for cat_cross_entropy()
+        if (cudaMemcpy(l3_outs, dev_l3_outs, l3_out_nodes * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) {
+            printf("Error copying l3_outs back to host.\n");
+            return EXIT_FAILURE;
+        }*/
+        
+        // categorical cross entropy loss with softmax activation
         cat_cross_entropy(
             l3_out_nodes, target_vec, l3_vals, l3_outs,
             l3_pdL_pdvals, &current_loss
         );
+        
+        // Move newly calculated gradient to device
+        if (cudaMemcpy(dev_l3_pdL_pdvals, l3_pdL_pdvals, l3_out_nodes * sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess) {
+            printf("Error copying l3_pdL_pdvals to device.\n");
+            return EXIT_FAILURE;
+        }
 
         // Store aggregate measures
         int predicted_index = argmax(l3_outs, 15);
@@ -313,37 +395,37 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         // Layer 3 backward
         Dense_backward(
             l3_out_nodes,
-            l3_pdL_pdouts,
-            l3_douts_dvals,
-            l3_pdL_pdvals,
-            l2_pdL_pdouts,
-            l2_outs, l3_in_nodes,
-            l3_weights,
-            l3_grads,
+            dev_l3_pdL_pdouts,
+            dev_l3_douts_dvals,
+            dev_l3_pdL_pdvals,
+            dev_l2_pdL_pdouts,
+            dev_l2_outs, l3_in_nodes,
+            dev_l3_weights,
+            dev_l3_grads,
             l3_activation
         );
         // Layer 2 backward
         Dense_backward(
             l2_out_nodes,
-            l2_pdL_pdouts,
-            l2_douts_dvals,
-            l2_pdL_pdvals,
-            l1_pdL_pdouts,
-            l1_outs, l2_in_nodes,
-            l2_weights,
-            l2_grads,
+            dev_l2_pdL_pdouts,
+            dev_l2_douts_dvals,
+            dev_l2_pdL_pdvals,
+            dev_l1_pdL_pdouts,
+            dev_l1_outs, l2_in_nodes,
+            dev_l2_weights,
+            dev_l2_grads,
             l2_activation
         );
         // Layer 1 backward
         Conv2D_backward(
             l1_out_rows, l1_out_cols,
-            l1_pdL_pdouts,
-            l1_douts_dvals,
-            l1_pdL_pdvals,
-            l1_pdL_pdouts_prev,
-            data + float_offset, l1_in_rows, l1_in_cols,
-            l1_weights, l1_kernel_rows, l1_kernel_cols,
-            l1_grads,
+            dev_l1_pdL_pdouts,
+            dev_l1_douts_dvals,
+            dev_l1_pdL_pdvals,
+            dev_l1_pdL_pdouts_prev,
+            dev_data + float_offset, l1_in_rows, l1_in_cols,
+            dev_l1_weights, l1_kernel_rows, l1_kernel_cols,
+            dev_l1_grads,
             l1_stride_rows, l1_stride_cols, l1_filters
         );
 
@@ -353,22 +435,28 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
 
         // Update layer 1
         SGD_update_params(
-            alpha, l1_weights, l1_grads,
+            alpha, dev_l1_weights, dev_l1_grads,
             l1_filters * l1_kernel_rows * l1_kernel_cols
         );
         // Update layer 2
         SGD_update_params(
-            alpha, l2_weights, l2_grads,
+            alpha, dev_l2_weights, dev_l2_grads,
             l2_in_nodes * l2_out_nodes
         );
         // Update layer 3
         SGD_update_params(
-            alpha, l3_weights, l3_grads,
+            alpha, dev_l3_weights, dev_l3_grads,
             l3_in_nodes * l3_out_nodes
         );
 
         // This will execute once every summary_iterations.
         if ( (iter+1) % summary_iterations == 0) {
+            clock_gettime(CLOCK_MONOTONIC_RAW, &end_time);
+            uint64_t time_over_period = // in microseconds
+                (end_time.tv_sec - begin_time.tv_sec) * 1000000
+                + (end_time.tv_nsec - begin_time.tv_nsec) / 1000;
+
+
             // important sanity check: make sure offsets are correct.
             // images and metadata should make sense and match.
             flt_img_to_ascii(data+float_offset, 64, 64, 1);
@@ -392,10 +480,35 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
             printf("\nCurrent iteration: %d\n", iter + 1);
             printf("Average loss over last %d iterations: %f\n", summary_iterations, avg_loss);
             printf("Accuracy of last %d iterations: %0.2f%%\n", summary_iterations, accuracy);
+            printf("Time spent processing the last %d iterations: %0.2fms\n",
+                summary_iterations, time_over_period / 1000.0);
+
+            // Mark the time for the next period
+            clock_gettime(CLOCK_MONOTONIC_RAW, &begin_time);
         }
     }
     
     if (save) {
+        // Copy all weights back to host
+        if (cudaMemcpy(l1_weights, dev_l1_weights,
+            l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float),
+            cudaMemcpyDeviceToHost) != cudaSuccess) {
+            printf("Layer 1 weights failed to copy back to host.\n");
+            return EXIT_FAILURE;
+        }
+        if (cudaMemcpy(l2_weights, dev_l2_weights,  
+            l2_in_nodes * l2_out_nodes * sizeof(float),
+            cudaMemcpyDeviceToHost) != cudaSuccess) {
+            printf("Layer 2 weights failed to copy back to host.\n");
+            return EXIT_FAILURE;
+        }
+        if (cudaMemcpy(l3_weights, dev_l3_weights,
+            l3_in_nodes * l3_out_nodes * sizeof(float),
+            cudaMemcpyDeviceToHost) != cudaSuccess) {
+            printf("Layer 3 weights failed to copy back to host.\n");
+            return EXIT_FAILURE;
+        }
+
         printf("Saving model.\n");
         FILE *l1_weights_file = fopen(l1_weights_filename, "wb");
         FILE *l2_weights_file = fopen(l2_weights_filename, "wb");
@@ -407,6 +520,16 @@ void cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         fclose(l2_weights_file);
         fclose(l3_weights_file);
     }
+
+    // Free host memory
+    free(l1_weights); free(l2_weights); free(l3_weights);
+    free(l3_vals); free(l3_outs); free(l3_pdL_pdvals);
+
+    // TODO: free device memory properly
+    cudaFree(dev_data);
+    cudaDeviceReset();
+
+    return 0;
 }
 
 void interactive_loop() {
@@ -452,7 +575,9 @@ void interactive_loop() {
         }
 
         else if (cmd == TRAIN) {
-            cmd_train(metadata, chinese_mnist_processed, toks);
+            int status = cmd_train(metadata, chinese_mnist_processed, toks);
+            if (status == EXIT_FAILURE)
+                return;
         }
 
         toks = Tokens_destroy(toks);

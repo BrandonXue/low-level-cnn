@@ -66,43 +66,60 @@ bool fuzzy_equals_digits(double a, double b, int digits) {
     return round_digits(a, digits) == round_digits(b, digits);
 }
 
+
+__global__
+void kernel_vec_vec_multiply(float *out, float *a, float *b, int len) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < len) {
+        out[idx] = a[idx] * b[idx];
+    }
+}
+
 /**
  * Element-wise multiplication of two vectors.
  * Output does not need zero-initialization.
  */
 __host__
 void vec_vec_multiply(float *out, float *a, float*b, int len) {
+    int blocks = ceil(len / 32.0);
+    kernel_vec_vec_multiply<<<blocks, 32>>>(out, a, b, len);
+
+    /*HOST VERSION
     for (int i = 0; i < len; ++i) {
         out[i] = a[i] * b[i];
     }
+    */
 }
 
 /**
- * Dot product of an M x N  matrix A, and a vector v's diagonal.
- * out = A • diag(v).
- * Basically multiplies each column of A by one element of v.
- * out should have rank of 1 (an array interpreted as a matrix).
- * out does not need zero-initialization.
+ * Dot product between matrix A and column vector.
  */
-__host__
-void mat_vec_multiply(float *out, float *A, int M, int N, float *v) {
-    for (int col = 0; col < N; ++col) {
-        for (int row = 0; row < M; ++row) {
-            out[row * N + col] = A[row * N + col] * v[col];
+__global__
+void kernel_mat_vec_dot(float *out, float *A, int M, int N, float *v) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    // One thread per row of the matrix
+    if (idx < M) {
+        out[idx] = 0;
+        for (int mat_col = 0; mat_col < N; ++mat_col) {
+            out[idx] += A[idx * N + mat_col] * v[mat_col];
         }
     }
 }
 
-/**
- * A combined operation on matrix A and vector v,
- * A • diag(v) reduced by sum (adding each row's elements together).
- */
 __host__
-void mat_vec_multiply_reduce_sum(float *out, float *A, int M, int N, float *v) {
-    for (int row = 0; row < M; ++row) {
-        out[row] = 0;
-        for (int col = 0; col < N; ++col) {
-            out[row] += A[row * N + col] * v[col];
+void mat_vec_dot(float *out, float *A, int M, int N, float *v) {
+    int blocks = ceil(M / 32.0);
+    kernel_mat_vec_dot<<<blocks, 32>>>(out, A, M, N, v);
+}
+
+__global__
+void kernel_vec_mat_dot(float *out, float *v, float *A, int M, int N) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    // One thread per column of the matrix
+    if (idx < N) {
+        out[idx] = 0;
+        for (int mat_row = 0; mat_row < M; ++mat_row) {
+            out[idx] += v[mat_row] * A[mat_row * N + idx];
         }
     }
 }
@@ -113,26 +130,25 @@ void mat_vec_multiply_reduce_sum(float *out, float *A, int M, int N, float *v) {
  */
 __host__
 void vec_mat_dot(float *out, float *v, float *A, int M, int N) {
+    int blocks = ceil(N / 32.0);
+    kernel_vec_mat_dot<<<blocks, 32>>>(out, v, A, M, N);
+
+    /* HOST VERSION
     for (int mat_col = 0; mat_col < N; ++mat_col) {
         out[mat_col] = 0;
         for (int mat_row = 0; mat_row < M; ++mat_row) {
             out[mat_col] += v[mat_row] * A[mat_row * N + mat_col];
         }
     }
+    */
 }
 
-/**
- * Reduce an M x N  matrix into a vector by the addition operation.
- * Reduces by adding elements in the same row together.
- * Output does not need zero-initialization.
- */
-__host__
-void mat_reduce_row_sum(float *out, float *A, int M, int N) {
-    for (int row = 0; row < M; ++row) {
-        out[row] = 0;
-        for (int col = 0; col < N; ++col) {
-            out[row] += A[row * N + col];
-        }
+__global__
+void kernel_vec_vec_outer(float *out, float *a, float *b, int a_len, int b_len) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if (row < a_len && col < b_len) {
+        out[row * b_len + col] = a[row] * b[col];
     }
 }
 
@@ -146,11 +162,19 @@ void mat_reduce_row_sum(float *out, float *A, int M, int N) {
  */
 __host__
 void vec_vec_outer(float *out, float *a, float *b, int a_len, int b_len) {
+
+    int blockX = ceil(a_len / 32.0);
+    int blockY = ceil(b_len / 32.0);
+    dim3 gridLaunch(blockX, blockY);
+    dim3 blockLaunch(32, 32);
+    kernel_vec_vec_outer<<<gridLaunch, blockLaunch>>>(out, a, b, a_len, b_len);
+    /* HOST VERSION
     for (int row = 0; row < a_len; ++row) {
         for (int col = 0; col < b_len; ++col) {
             out[row * b_len + col] = a[row] * b[col];
         }
     }
+    */
 }
 
 /**
@@ -177,11 +201,30 @@ void normalize_ctf(float *res, unsigned char *arr, int len) {
     }
 }
 
+
+__global__
+void kernel_vec_sigmoid_and_deriv(float *out, float *out_deriv, float *in, int len) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < len) {
+        if (in[idx] < 0) {
+            float exp_x = exp(in[idx]);
+            out[idx] = exp_x / (1 + exp_x);
+        } else {
+            out[idx] = 1 / (1 + exp(-in[idx]));
+        }
+        out_deriv[idx] = out[idx] * (1 - out[idx]);
+    }
+}
+
 /**
  * Vectorized sigmoid and its first derivative.
  */
 __host__
 void vec_sigmoid_and_deriv(float *out, float *out_deriv, float *in, int len) {
+    int blocks = ceil(len / 32.0);
+    kernel_vec_sigmoid_and_deriv<<<blocks, 32>>>(out, out_deriv, in, len);
+
+    /* HOST VERSION
     for (int i = 0; i < len; ++i) {
         if (in[i] < 0) {
             float exp_x = exp(in[i]);
@@ -192,6 +235,21 @@ void vec_sigmoid_and_deriv(float *out, float *out_deriv, float *in, int len) {
         //out[i] = 1 / (1 + exp(-in[i]));
         out_deriv[i] = out[i] * (1 - out[i]);
     }
+    */
+}
+
+__global__
+void kernel_vec_relu_and_deriv(float *out, float *out_deriv, float *in, int len) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < len) {
+        if (in[idx] > 0) {
+            out[idx] = in[idx];
+            out_deriv[idx] = 1;
+        } else {
+            out[idx] = 0;
+            out_deriv[idx] = 0;
+        }
+    }
 }
 
 /**
@@ -199,6 +257,9 @@ void vec_sigmoid_and_deriv(float *out, float *out_deriv, float *in, int len) {
  */
 __host__
 void vec_relu_and_deriv(float *out, float *out_deriv, float *in, int len) {
+    int blocks = ceil(len / 32.0);
+    kernel_vec_relu_and_deriv<<<blocks, 32>>>(out, out_deriv, in, len);
+    /* HOST VERSION
     for (int i = 0; i < len; ++i) {
         if (in[i] > 0) {
             out[i] = in[i];
@@ -208,6 +269,7 @@ void vec_relu_and_deriv(float *out, float *out_deriv, float *in, int len) {
             out_deriv[i] = 0;
         }
     }
+    */
 }
 
 // I am using the exact fuzz factor used by Keras and TF
@@ -285,5 +347,179 @@ void cat_cross_entropy(
     for (int i = 0; i < len; ++i) {
         pdL_pdval[i] = outs[i] - y_true[i];
     }
+}
+
+__host__
+float convolution_2d(
+    int out_row, int out_col,
+    float *image, int i_rows, int i_cols,
+    float *kernel, int k_rows, int k_cols,
+    int stride_rows, int stride_cols
+) {
+    float out = 0;
+    for (int k_row = 0; k_row < k_rows; ++k_row) {
+        for (int k_col = 0; k_col < k_cols; ++k_col) {
+            int i_row = out_row * stride_rows + k_row;
+            int i_col = out_col * stride_cols + k_col;
+            out += kernel[k_row * k_cols + k_col] * image[i_row * i_cols + i_col];
+        }
+    }
+    return out;
+}
+
+__global__
+void kernel_all_convolution_2d(
+    float *result, int res_rows, int res_cols,
+    float *image, int i_rows, int i_cols,
+    float *kernel, int k_rows, int k_cols,
+    int stride_rows, int stride_cols
+) {
+    int res_row = blockIdx.x * blockDim.x + threadIdx.x;
+    int res_col = blockIdx.y * blockDim.y + threadIdx.y;
+    if (res_row < res_rows && res_col < res_cols) {
+        int i_row_offset = res_row * stride_rows;
+        int i_col_offset = res_col * stride_cols;
+        result[res_row * res_cols + res_col] = 0;
+        for (int k_row = 0; k_row < k_rows; ++k_row) {
+            for (int k_col = 0; k_col < k_cols; ++k_col) {
+                result[res_row * res_cols + res_col] +=
+                    kernel[k_row * k_cols + k_col] * 
+                    image[(i_row_offset + k_row) * i_cols + (i_col_offset + k_col)];
+            }
+        }
+    }
+}
+
+__host__
+void all_convolution_2d(
+    float *result,
+    float *image, int i_rows, int i_cols,
+    float *weights, int filters, int k_rows, int k_cols,
+    int stride_rows, int stride_cols
+) {
+    int res_rows = ((i_rows - k_rows) / stride_rows) + 1;
+    int res_cols = ((i_cols - k_cols) / stride_cols) + 1;
+
+    int gridX = ceil(res_rows / 32.0);
+    int gridY = ceil(res_cols / 32.0);
+    for (int filter = 0; filter < filters; ++filter) {
+        dim3 gridLaunch(gridX, gridY);
+        dim3 blockLaunch(32, 32);
+        //printf("Launching for conv2d forward.\n");
+        kernel_all_convolution_2d<<<gridLaunch, blockLaunch>>>(
+            result + (filter * res_rows * res_cols), res_rows, res_cols,
+            image, i_rows, i_cols,
+            weights + (filter * k_rows * k_cols), k_rows, k_cols,
+            stride_rows, stride_cols
+        );
+    }
+    /* HOST VERSION
+    int res_rows = ((i_rows - k_rows) / stride_rows) + 1;
+    int res_cols = ((i_cols - k_cols) / stride_cols) + 1;
+    for (int filter = 0; filter < filters; ++filter) {
+        // Each filter is its own kernel. Therefore, need to offset weights
+        // depending on which kernel we're using.
+        float *curr_kernel = weights + (filter * k_rows * k_cols);
+        for (int res_row = 0; res_row < res_rows; ++res_row) {
+            for (int res_col = 0; res_col < res_cols; ++res_col) {
+                // activation map offset           + row offset           + col offset
+                // (filters * res_rows * res_cols) + (res_row * res_cols) + res_col
+                int res_index = res_cols * (filter * res_rows + res_row) + res_col; 
+                result[res_index] = convolution_2d(
+                    res_row, res_col,
+                    image, i_rows, i_cols,
+                    curr_kernel, k_rows, k_cols,
+                    stride_rows, stride_cols);
+                //printf("result[%d]=%f\n", res_index, result[res_index]);
+            }
+        }
+    }*/
+}
+
+// dilation-from-stride convolute 2d
+// used for backprop to calculate gradients for params
+__host__
+float back_convolution_2d(
+    int out_row, int out_col,
+    float *image, int i_rows, int i_cols,
+    float *kernel, int k_rows, int k_cols,
+    int stride_rows, int stride_cols
+){
+    float out = 0;
+    for (int k_row = 0; k_row < k_rows; ++k_row) {
+        for (int k_col = 0; k_col < k_cols; ++k_col) {
+            int i_row = out_row + stride_rows * k_row;
+            int i_col = out_col + stride_cols * k_col;
+            out += kernel[k_row * k_cols + k_col] * image[i_row * i_cols + i_col];  
+        }
+    }
+    return out;
+}
+
+__global__
+void kernel_all_back_convolution_2d(
+    float *result, int res_rows, int res_cols,
+    float *image, int i_rows, int i_cols,
+    float *kernel, int k_rows, int k_cols,
+    int stride_rows, int stride_cols
+) {
+    int res_row = blockIdx.x * blockDim.x + threadIdx.x;
+    int res_col = blockIdx.y * blockDim.y + threadIdx.y;
+    if (res_row < res_rows && res_col < res_cols) {
+        result[res_row * res_cols + res_col] = 0;
+        for (int k_row = 0; k_row < k_rows; ++k_row) {
+            for (int k_col = 0; k_col < k_cols; ++k_col) {
+                result[res_row * res_cols + res_col] +=
+                    kernel[k_row * k_cols + k_col] *
+                    image[(res_row + stride_rows * k_row) * i_cols + (res_col + stride_cols * k_col)];
+            }
+        }
+    }
+}
+
+// all dilation-from-stride convolute 2d
+//used in backprop to calculate gradients for params
+__host__
+void all_back_convolution_2d(
+    float *result, int res_rows, int res_cols,
+    float *image, int i_rows, int i_cols,
+    float *glob_grads, int filters, int g_rows, int g_cols,
+    int stride_rows, int stride_cols
+) {
+    int gridX = ceil(res_rows / 32.0);
+    int gridY = ceil(res_cols / 32.0);
+    for (int filter = 0; filter < filters; ++filter) {
+        dim3 gridLaunch(gridX, gridY);
+        dim3 blockLaunch(32, 32);
+        //printf("Launching for conv2d backprop.\n");
+        kernel_all_back_convolution_2d<<<gridLaunch, blockLaunch>>>(
+            result + (filter * res_rows * res_cols), res_rows, res_cols,
+            image, i_rows, i_cols,
+            glob_grads + (filter * g_rows * g_cols), g_rows, g_cols,
+            stride_rows, stride_cols
+        );
+    }
+
+    /* HOST VERSION
+    for (int filter = 0; filter < filters; ++filter) {
+        // glob_grads is the change in loss w.r.t. pre-activation values.
+        // each filter produces one activation map, which has its own
+        // values for glob_grads.
+        // Therefore, need to offset glob_grads based on the index
+        // of the filter that produced it
+        float *curr_glob_grads = glob_grads + (filter * g_rows * g_cols);
+        for (int res_row = 0; res_row < res_rows; ++res_row) {
+            for (int res_col = 0; res_col < res_cols; ++res_col) {
+                // activation map offset           + row offset           + col offset
+                // (filters * res_rows * res_cols) + (res_row * res_cols) + res_col
+                int res_index = res_cols * (filter * res_rows + res_row) + res_col;
+                result[res_index] = back_convolution_2d(
+                    res_row, res_col,
+                    image, i_rows, i_cols,
+                    curr_glob_grads, g_rows, g_cols,
+                    stride_rows, stride_cols);
+            }
+        }
+    }*/
 }
 

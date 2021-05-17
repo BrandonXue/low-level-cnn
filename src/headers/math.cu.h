@@ -36,19 +36,44 @@ __host__
 void vec_vec_outer(float*, float*, float*, int, int);
 
 __host__
-void mat_reduce_row_sum(float*, float*, int, int);
-
-__host__
-void mat_vec_multiply(float*, float*, int, int, float*);
-
-__host__
-void mat_vec_multiply_reduce_sum(float*, float*, int, int, float*);
+void mat_vec_dot(float *, float *, int, int, float*);
 
 __host__
 void vec_vec_multiply(float*, float*, float*, int);
 
 __host__
 void vec_mat_dot(float*, float*, float*, int, int);
+
+__host__
+float convolution_2d(
+    int, int,
+    float*, int, int,
+    float*, int, int,
+    int, int
+);
+
+__host__
+void all_convolution_2d(
+    float*,
+    float*, int, int,
+    float*, int, int, int,
+    int, int
+);
+
+__host__
+float back_convolution_2d(
+    int, int,
+    float*, int, int,
+    float*, int, int,
+    int, int
+);
+
+void all_back_convolution_2d(
+    float*, int, int,
+    float*, int, int,
+    float*, int, int, int,
+    int, int
+);
 
 /* ============================= Loss functions =============================*/
 

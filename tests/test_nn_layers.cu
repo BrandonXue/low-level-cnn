@@ -60,12 +60,26 @@ TEST_CASE( "convolution layer forward pass", "[conv2d]" ) {
     float outs[filters * o_rows * o_cols];
     float vals[filters * o_rows * o_cols];
     float do_dv[filters * o_rows * o_cols];
+    
+    float *devIns, *devWeights, *devOuts, *devVals, *devDoDv;
+    cudaMalloc(&devIns, i_rows * i_cols * sizeof(float));
+    cudaMalloc(&devWeights, filters * w_rows * w_cols * sizeof(float));
+    cudaMalloc(&devOuts, filters * o_rows * o_cols * sizeof(float));
+    cudaMalloc(&devVals, filters * o_rows * o_cols * sizeof(float));
+    cudaMalloc(&devDoDv, filters * o_rows * o_cols * sizeof(float));
+    cudaMemcpy(devIns, ins, i_rows * i_cols * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devWeights, weights, filters * w_rows * w_cols * sizeof(float), cudaMemcpyHostToDevice);
 
-    Conv2D_forward(outs, o_rows, o_cols, vals, do_dv,
-                   ins, i_rows, i_cols,
-                   weights, w_rows, w_cols,
+    Conv2D_forward(devOuts, o_rows, o_cols, devVals, devDoDv,
+                   devIns, i_rows, i_cols,
+                   devWeights, w_rows, w_cols,
                    s_rows, s_cols, filters,
                    0); // 0 == sigmoid activation
+    
+    cudaMemcpy(vals, devVals, filters * o_rows * o_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(outs, devOuts, filters * o_rows * o_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(do_dv, devDoDv, filters * o_rows * o_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devIns); cudaFree(devWeights); cudaFree(devOuts); cudaFree(devVals); cudaFree(devDoDv);
 
     float expect_vals[filters * o_rows * o_cols] =
         { 0.2000000000, -0.5800000000,
@@ -123,13 +137,34 @@ TEST_CASE( "convolution layer backprop", "[conv2d]" ) {
     float pdL_pdouts_pred[i_rows * i_cols];
     float grads[w_rows * w_cols];
 
+    float *devPdL_pdouts, *devDouts_dvals, *devWeights, *devIns, *devPdL_pdvals, *devPdL_pdouts_pred, *devGrads;
+    cudaMalloc(&devPdL_pdouts, o_rows * o_cols * sizeof(float));
+    cudaMalloc(&devDouts_dvals, o_rows * o_cols * sizeof(float));
+    cudaMalloc(&devWeights, w_rows * w_cols * sizeof(float));
+    cudaMalloc(&devIns, i_rows * i_cols * sizeof(float));
+    cudaMalloc(&devPdL_pdvals, o_rows * o_cols * sizeof(float));
+    cudaMalloc(&devPdL_pdouts_pred, i_rows * i_cols * sizeof(float));
+    cudaMalloc(&devGrads, w_rows * w_cols * sizeof(float));
+
+    cudaMemcpy(devPdL_pdouts, pdL_pdouts, o_rows * o_cols * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devDouts_dvals, douts_dvals, o_rows * o_cols * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devWeights, weights, w_rows * w_cols * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devIns, ins, i_rows * i_cols * sizeof(float), cudaMemcpyHostToDevice);
+
     Conv2D_backward(
         o_rows, o_cols,
-        pdL_pdouts, douts_dvals, pdL_pdvals, pdL_pdouts_pred,
-        ins, i_rows, i_cols,
-        weights, w_rows, w_cols,
-        grads,
+        devPdL_pdouts, devDouts_dvals, devPdL_pdvals, devPdL_pdouts_pred,
+        devIns, i_rows, i_cols,
+        devWeights, w_rows, w_cols,
+        devGrads,
         s_rows, s_cols, filters);
+
+    cudaMemcpy(pdL_pdvals, devPdL_pdvals, o_rows * o_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(pdL_pdouts_pred, devPdL_pdouts_pred, i_rows * i_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(grads, devGrads, w_rows * w_cols * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devPdL_pdouts); cudaFree(devDouts_dvals); cudaFree(devWeights);
+    cudaFree(devIns); cudaFree(devPdL_pdvals); cudaFree(devPdL_pdouts_pred);
+    cudaFree(devGrads);
 
     float expect_pdL_pdvals[o_rows * o_cols] = 
         { 0.56928811720, -0.2761199843,
@@ -146,6 +181,7 @@ TEST_CASE( "convolution layer backprop", "[conv2d]" ) {
         REQUIRE( fuzzy_equals_digits(pdL_pdvals[i], expect_pdL_pdvals[i], 6) );
     }
     for (int i = 0; i < w_rows * w_cols; ++i) {
+        //printf("grads[%d]=%f, expect %f\n", i, grads[i], expect_grads[i]);
         REQUIRE( fuzzy_equals_digits(grads[i], expect_grads[i], 6) );
     }
 }
@@ -159,18 +195,32 @@ TEST_CASE( "dense layer forward pass", "[dense]" ) {
           0.13, -0.42,
           0.94, -0.29,
          -0.07,  0.52};
-
     float vals[o_len];
     float outs[o_len];
     float do_dv[o_len];
-    
+   
+    float *devIns, *devWeights, *devVals, *devOuts, *devDoDv;
+    cudaMalloc(&devIns, i_len * sizeof(float));
+    cudaMalloc(&devWeights, i_len * o_len * sizeof(float));
+    cudaMalloc(&devVals, o_len * sizeof(float));
+    cudaMalloc(&devOuts, o_len * sizeof(float));
+    cudaMalloc(&devDoDv, o_len * sizeof(float));
+    cudaMemcpy(devIns, ins, i_len * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devWeights, weights, i_len * o_len * sizeof(float), cudaMemcpyHostToDevice);
+
     Dense_forward(
-        outs,o_len,
-        vals, do_dv,
-        ins, i_len,
-        weights,
+        devOuts,o_len,
+        devVals, devDoDv,
+        devIns, i_len,
+        devWeights,
         0 // sigmoid activation
     );
+    
+    cudaMemcpy(vals, devVals, o_len * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(outs, devOuts, o_len * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(do_dv, devDoDv, o_len * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devIns); cudaFree(devWeights); cudaFree(devVals);
+    cudaFree(devOuts); cudaFree(devDoDv);
 
     float expect_vals[o_len] = {1.3760000000, 4.5208000000};
     float expect_outs[o_len] = {0.7983478144, 0.9892367912};
@@ -200,10 +250,31 @@ TEST_CASE( "dense layer backward pass", "[dense]" ) {
     float pdL_pdouts_pred[i_len];
     float grads[i_len * o_len];
 
+    float *devIns, *devWeights, *devPdL_pdouts, *devDouts_dvals, *devPdL_pdvals, *devPdL_pdouts_pred, *devGrads;
+    cudaMalloc(&devIns, i_len * sizeof(float));
+    cudaMalloc(&devWeights, i_len * o_len * sizeof(float));
+    cudaMalloc(&devPdL_pdouts, o_len * sizeof(float));
+    cudaMalloc(&devDouts_dvals, o_len * sizeof(float));
+    cudaMalloc(&devPdL_pdvals, o_len * sizeof(float));
+    cudaMalloc(&devPdL_pdouts_pred, i_len * sizeof(float));
+    cudaMalloc(&devGrads, i_len * o_len * sizeof(float));
+
+    cudaMemcpy(devIns, ins, i_len * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devWeights, weights, i_len * o_len * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devPdL_pdouts, pdL_pdouts, o_len * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devDouts_dvals, douts_dvals, o_len * sizeof(float), cudaMemcpyHostToDevice);
+
     Dense_backward(
-        o_len, pdL_pdouts, douts_dvals, pdL_pdvals, pdL_pdouts_pred,
-        ins, i_len, weights, grads, activation
+        o_len, devPdL_pdouts, devDouts_dvals, devPdL_pdvals, devPdL_pdouts_pred,
+        devIns, i_len, devWeights, devGrads, activation
     );
+
+    cudaMemcpy(pdL_pdvals, devPdL_pdvals, o_len * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(pdL_pdouts_pred, devPdL_pdouts_pred, i_len * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(grads, devGrads, i_len * o_len * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devIns); cudaFree(devWeights); cudaFree(devPdL_pdouts); cudaFree(devDouts_dvals);
+    cudaFree(devPdL_pdvals); cudaFree(devPdL_pdouts_pred); cudaFree(devGrads);
+
     float expect_pdL_pdvals[o_len] = {0.064, 0.108};
     float expect_pdL_pdouts_pred[i_len] = {0.0732, 0.028, 0.0364, 0.0452};
     float expect_grads[i_len * o_len] = 
@@ -228,7 +299,15 @@ TEST_CASE( "stochastic gradient descent update params", "[dense][conv2d]" ) {
     int N = 4;
     float weights[N] = {0.12, -0.56, 0.39, 0.93};
     float grads[N] = {0.2, -0.3, 0.1, 0.3};
-    SGD_update_params(eta, weights, grads, N);
+    
+    float *devWeights, *devGrads;
+    cudaMalloc(&devWeights, N * sizeof(float));
+    cudaMalloc(&devGrads, N * sizeof(float));
+    cudaMemcpy(devWeights, weights, N * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(devGrads, grads, N * sizeof(float), cudaMemcpyHostToDevice);
+    SGD_update_params(eta, devWeights, devGrads, N);
+    cudaMemcpy(weights, devWeights, N * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaFree(devWeights); cudaFree(devGrads);
     float expect_weights[N] = {0.02, -0.41, 0.34, 0.78};
     for (int i = 0; i < N; ++i) {
         REQUIRE( fuzzy_equals_digits(weights[i], expect_weights[i], 5) );
