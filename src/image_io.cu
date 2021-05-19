@@ -231,7 +231,10 @@ InputLabel *load_chinese_mnist_info() {
     char csv_line_buf[64];
     
     // Skip the header line
-    fgets(csv_line_buf, 63, fs);
+    char *retval = fgets(csv_line_buf, 63, fs);
+    if (retval == NULL) {
+        printf("Something went wrong loading the metadata.\n");
+    }
 
     // Iterate over the lines of the csv file
     int line_index = 0;

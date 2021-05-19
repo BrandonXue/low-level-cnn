@@ -158,8 +158,12 @@ void cmd_preprocess(InputLabel **metadata, float **data) {
         fwrite(*data, sizeof(float), 64 * 64 * 14999, processed_imgs_file);
         fclose(processed_imgs_file);
     } else {
+        int prepro_img_bytes = 64 * 64 * 14999;
         printf("Found previously pre-processed images. Loading now.\n");
-        fread(*data, sizeof(float), 64 * 64 * 14999, processed_imgs_file);
+        int r_bytes = fread(*data, sizeof(float), prepro_img_bytes, processed_imgs_file);
+        if (r_bytes != prepro_img_bytes) {
+            printf("Error: Some images may be missing.\n");
+        }
         fclose(processed_imgs_file);
     }
 }
@@ -314,19 +318,28 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         if (l1_weights_file == NULL) {
             printf("Layer 1 weights not found. Using randomly initialized.\n");
         } else {
-            fread(l1_weights, sizeof(float), l1_filters * l1_kernel_rows * l1_kernel_cols, l1_weights_file);
+            int r_bytes = fread(l1_weights, sizeof(float), l1_filters * l1_kernel_rows * l1_kernel_cols, l1_weights_file);
+            if (r_bytes != l1_filters * l1_kernel_rows * l1_kernel_cols) {
+                printf("Error: Layer 1 weights may not be fully loaded.\n");
+            }
             fclose(l1_weights_file);
         }
         if (l2_weights_file == NULL) {
             printf("Layer 2 weights not found. Using randomly initialized.\n");
         } else {
-            fread(l2_weights, sizeof(float), l2_in_nodes * l2_out_nodes, l2_weights_file);
+            int r_bytes = fread(l2_weights, sizeof(float), l2_in_nodes * l2_out_nodes, l2_weights_file);
+            if (r_bytes != l2_in_nodes * l2_out_nodes) {
+                printf("Error: Layer 2 weights may not be fully loaded.\n");
+            } 
             fclose(l2_weights_file);
         }
         if (l3_weights_file == NULL) {
             printf("Layer 3 weights not found. Using randomly initialized.\n");
         } else {
-            fread(l3_weights, sizeof(float), l3_in_nodes * l3_out_nodes, l3_weights_file);
+            int r_bytes = fread(l3_weights, sizeof(float), l3_in_nodes * l3_out_nodes, l3_weights_file);
+             if (r_bytes != l3_in_nodes * l3_out_nodes) {
+                printf("Error: Layer 2 weights may not be fully loaded.\n");
+            }
             fclose(l3_weights_file);
         }
     }
@@ -569,7 +582,10 @@ void interactive_loop() {
     char buf[1024];
     while (true) {
         print_prompt();
-        fgets(buf, 1023, stdin);
+        char *retval = fgets(buf, 1023, stdin);
+        if (retval == NULL) {
+            printf("Error on read.\n");
+        }
             
         Tokens *toks = Tokens_create();
         

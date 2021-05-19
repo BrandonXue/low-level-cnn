@@ -112,14 +112,49 @@ void mat_vec_dot(float *out, float *A, int M, int N, float *v) {
     kernel_mat_vec_dot<<<blocks, 32>>>(out, A, M, N, v);
 }
 
+
 __global__
-void kernel_vec_mat_dot(float *out, float *v, float *A, int M, int N) {
+void kernel_zero(float *v, int len) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    // One thread per column of the matrix
-    if (idx < N) {
-        out[idx] = 0;
-        for (int mat_row = 0; mat_row < M; ++mat_row) {
-            out[idx] += v[mat_row] * A[mat_row * N + idx];
+    if (idx < len) {
+        v[idx] = 0;
+    }
+}
+
+#define COLS_PER_BLOCK 32
+#define SEGMENT_SIZE 32
+
+// out needs to be zero-ed before this kernel launch.
+// this dot product should only be used for a number of rows that
+// is perfectly divisible by "segment size"
+__global__
+void kernel_vmm_full(float *out, float *v, float *A, int N) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int seg = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // each column is handled by multiple full segments
+    if (col < N) {
+        float loc_sum = 0;
+
+        // "By default, the compiler unrolls small loops with a known trip count."
+#pragma unroll
+        for (int seg_row = 0; seg_row < SEGMENT_SIZE; ++seg_row) {
+            int mat_row = seg * SEGMENT_SIZE + seg_row;
+            loc_sum += v[mat_row] * A[mat_row * N + col];
+        }
+
+        // Add to the output vector at the index of this thread's matrix column
+        // Must be atomic because of race conditions between segments.
+        atomicAdd(out + col, loc_sum);
+    }
+}
+
+__global__
+void kernel_vmm_partial(float *out, float *offset_v, float *offset_A, int rows, int N) {
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (col < N) {
+        for (int seg_row = 0; seg_row < rows; ++seg_row) {
+            out[col] += offset_v[seg_row] * offset_A[seg_row * N + col];
         }
     }
 }
@@ -130,8 +165,29 @@ void kernel_vec_mat_dot(float *out, float *v, float *A, int M, int N) {
  */
 __host__
 void vec_mat_dot(float *out, float *v, float *A, int M, int N) {
-    int blocks = ceil(N / 32.0);
-    kernel_vec_mat_dot<<<blocks, 32>>>(out, v, A, M, N);
+
+    int gridX = ceil((float)N / (float)COLS_PER_BLOCK);
+
+    // Zero the output vector first.
+    kernel_zero<<<gridX, COLS_PER_BLOCK>>>(out, N);
+
+    // Handle full vertical segments of the matrix (if any)
+    int full_segments = M / SEGMENT_SIZE; // int division
+    if (full_segments > 0) {
+        dim3 gridLaunch(gridX, full_segments);
+        dim3 blockLaunch(COLS_PER_BLOCK, 1);
+        kernel_vmm_full<<<gridLaunch, blockLaunch>>>(out, v, A, N);
+    }
+
+    // Handle the remaining partial segment (if any)
+    int remaining_rows = M % SEGMENT_SIZE;
+    if (remaining_rows != 0) {
+        kernel_vmm_partial<<<gridX, COLS_PER_BLOCK>>>
+            (out,
+             v + full_segments * SEGMENT_SIZE,
+             A + full_segments * SEGMENT_SIZE * N,
+             remaining_rows, N);
+    }
 
     /* HOST VERSION
     for (int mat_col = 0; mat_col < N; ++mat_col) {
@@ -374,12 +430,23 @@ void kernel_all_convolution_2d(
     float *kernel, int k_rows, int k_cols,
     int stride_rows, int stride_cols
 ) {
+    // Find which output cell this thread is making calculations for. 
     int res_row = blockIdx.x * blockDim.x + threadIdx.x;
     int res_col = blockIdx.y * blockDim.y + threadIdx.y;
+
+    // Only perform work for thread indices within the output bounds
     if (res_row < res_rows && res_col < res_cols) {
+
+        // offset this thread's references to the kernel and result depending on filter index
+        kernel = kernel + (blockIdx.z * k_rows * k_cols);
+        result = result + (blockIdx.z * res_rows * res_cols);
+
         int i_row_offset = res_row * stride_rows;
         int i_col_offset = res_col * stride_cols;
-        result[res_row * res_cols + res_col] = 0;
+
+        result[res_row * res_cols + res_col] = 0; // Clear cell first
+
+        // Sum up the element-wise products.
         for (int k_row = 0; k_row < k_rows; ++k_row) {
             for (int k_col = 0; k_col < k_cols; ++k_col) {
                 result[res_row * res_cols + res_col] +=
@@ -402,17 +469,18 @@ void all_convolution_2d(
 
     int gridX = ceil(res_rows / 32.0);
     int gridY = ceil(res_cols / 32.0);
-    for (int filter = 0; filter < filters; ++filter) {
-        dim3 gridLaunch(gridX, gridY);
-        dim3 blockLaunch(32, 32);
-        //printf("Launching for conv2d forward.\n");
-        kernel_all_convolution_2d<<<gridLaunch, blockLaunch>>>(
-            result + (filter * res_rows * res_cols), res_rows, res_cols,
-            image, i_rows, i_cols,
-            weights + (filter * k_rows * k_cols), k_rows, k_cols,
-            stride_rows, stride_cols
-        );
-    }
+
+    dim3 gridLaunch(gridX, gridY, filters);
+    dim3 blockLaunch(32, 32);
+
+    //printf("Launching for conv2d forward.\n");
+    kernel_all_convolution_2d<<<gridLaunch, blockLaunch>>>(
+        result, res_rows, res_cols,
+        image, i_rows, i_cols,
+        weights, k_rows, k_cols,
+        stride_rows, stride_cols
+    );
+
     /* HOST VERSION
     int res_rows = ((i_rows - k_rows) / stride_rows) + 1;
     int res_cols = ((i_cols - k_cols) / stride_cols) + 1;
@@ -436,6 +504,7 @@ void all_convolution_2d(
     }*/
 }
 
+// This is for the host version that does not use GPU.
 // dilation-from-stride convolute 2d
 // used for backprop to calculate gradients for params
 __host__
@@ -463,10 +532,20 @@ void kernel_all_back_convolution_2d(
     float *kernel, int k_rows, int k_cols,
     int stride_rows, int stride_cols
 ) {
+    // Find which output cell this thread is making calculations for.
     int res_row = blockIdx.x * blockDim.x + threadIdx.x;
     int res_col = blockIdx.y * blockDim.y + threadIdx.y;
+    
+    // Only perform work for thread indices within the output bounds
     if (res_row < res_rows && res_col < res_cols) {
-        result[res_row * res_cols + res_col] = 0;
+        
+        // offset this thread's references to the kernel and result depending on filter index
+        kernel = kernel + (blockIdx.z * k_rows * k_cols);
+        result = result + (blockIdx.z * res_rows * res_cols);
+
+        result[res_row * res_cols + res_col] = 0; // Clear cell first
+
+        // Sum up the element-wise products.
         for (int k_row = 0; k_row < k_rows; ++k_row) {
             for (int k_col = 0; k_col < k_cols; ++k_col) {
                 result[res_row * res_cols + res_col] +=
@@ -488,17 +567,17 @@ void all_back_convolution_2d(
 ) {
     int gridX = ceil(res_rows / 32.0);
     int gridY = ceil(res_cols / 32.0);
-    for (int filter = 0; filter < filters; ++filter) {
-        dim3 gridLaunch(gridX, gridY);
-        dim3 blockLaunch(32, 32);
-        //printf("Launching for conv2d backprop.\n");
-        kernel_all_back_convolution_2d<<<gridLaunch, blockLaunch>>>(
-            result + (filter * res_rows * res_cols), res_rows, res_cols,
-            image, i_rows, i_cols,
-            glob_grads + (filter * g_rows * g_cols), g_rows, g_cols,
-            stride_rows, stride_cols
-        );
-    }
+
+    dim3 gridLaunch(gridX, gridY, filters);
+    dim3 blockLaunch(32, 32);
+
+    //printf("Launching for conv2d backprop.\n");
+    kernel_all_back_convolution_2d<<<gridLaunch, blockLaunch>>>(
+        result, res_rows, res_cols,
+        image, i_rows, i_cols,
+        glob_grads, g_rows, g_cols,
+        stride_rows, stride_cols
+    );
 
     /* HOST VERSION
     for (int filter = 0; filter < filters; ++filter) {
@@ -523,3 +602,10 @@ void all_back_convolution_2d(
     }*/
 }
 
+__host__
+void conv_2d_dilate(
+    float *result,
+    float *A, int A_rows, int A_cols,
+    float *B, int B_rows, int B_cols,
+    int B_row_dil, int B_col_dil
+);

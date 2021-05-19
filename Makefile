@@ -69,7 +69,7 @@ TEST_TARGET = $(TEST_BIN_DIR)/$(TEST_TARGET_NAME)
 TEST_MAIN_OBJ=$(TEST_OBJ_DIR)/$(TEST_MAIN_NAME).o
 
 CC = nvcc
-NVCC_FLAGS = -Xcompiler -Wall,-O3 --std=c++14 -Iexternal -Isrc/headers
+NVCC_FLAGS = -Xcompiler -Wall -O3 --std=c++14 -Iexternal -Isrc/headers
 
 # Phony targets ===============================================================
 
