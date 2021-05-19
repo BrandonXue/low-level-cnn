@@ -91,6 +91,17 @@ void vec_vec_multiply(float *out, float *a, float*b, int len) {
     */
 }
 
+__global__
+void kernel_zero(float *v, int len) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < len) {
+        v[idx] = 0;
+    }
+}
+
+#define ROWS_PER_BLOCK 32
+#define SEGMENT_SIZE 32
+
 /**
  * Dot product between matrix A and column vector.
  */
@@ -106,18 +117,60 @@ void kernel_mat_vec_dot(float *out, float *A, int M, int N, float *v) {
     }
 }
 
-__host__
-void mat_vec_dot(float *out, float *A, int M, int N, float *v) {
-    int blocks = ceil(M / 32.0);
-    kernel_mat_vec_dot<<<blocks, 32>>>(out, A, M, N, v);
+__global__
+void kernel_mvm_full(float *out, float *A, int M, int N, float *v) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col_offset = (blockIdx.y * blockDim.y + threadIdx.y) * SEGMENT_SIZE;
+
+    // each column is handled by multiple full segments
+    if (row < M) {
+        float loc_sum = 0;
+
+#pragma unroll
+        for (int seg_col = 0; seg_col < SEGMENT_SIZE; ++seg_col) {
+            int mat_col = col_offset + seg_col;
+            loc_sum += v[mat_col] * A[row * N + mat_col];
+        }
+
+        // Add to the output vector at the index of this thread's matrix column
+        // Must be atomic because of race conditions between segments.
+        atomicAdd(out + row, loc_sum);
+    }
 }
 
-
+// Cannot offset A because data is stored in row-major order.
 __global__
-void kernel_zero(float *v, int len) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < len) {
-        v[idx] = 0;
+void kernel_mvm_partial(float *out, float *A, int M, int N, float *v, int start_col) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M) {
+        for (int col = start_col; col < N; ++col) {
+            out[row] += v[col] * A[row * N + col];
+        }
+    }
+
+}
+
+__host__
+void mat_vec_dot(float *out, float *A, int M, int N, float *v) {
+    // new code below
+    int gridX = ceil((float)M / (float)ROWS_PER_BLOCK);
+
+    // Zero the output vector first.
+    kernel_zero<<<gridX, ROWS_PER_BLOCK>>>(out, M);
+
+    // Handle full vertical segments of the matrix (if any)
+    int full_segments = N / SEGMENT_SIZE; // int division
+    if (full_segments > 0) {
+        dim3 gridLaunch(gridX, full_segments);
+        dim3 blockLaunch(ROWS_PER_BLOCK, 1);
+        kernel_mvm_full<<<gridLaunch, blockLaunch>>>(out, A, M, N, v);
+    }
+
+    // Handle the remaining partial segment (if any)
+    int remaining_cols = N % SEGMENT_SIZE;
+    if (remaining_cols != 0) {
+        kernel_mvm_partial<<<gridX, ROWS_PER_BLOCK>>>
+            (out, A, M, N, v, N - remaining_cols);
     }
 }
 

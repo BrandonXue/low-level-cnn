@@ -187,13 +187,12 @@ TEST_CASE( "vectorized ReLU and first derivative", "[math]" ) {
 }
 
 TEST_CASE( "matrix dotted with column vector", "[math]" ) {
-    int input_nodes = 4, output_nodes = 2;
+    int input_nodes = 3, output_nodes = 5;
     float weights[input_nodes * output_nodes] =
-        {  0.3,  0.12,
-         -0.12,  0.21,
-          0.38,  0.19,
-          0.46, -0.05};
-    float pdL_pdvals[output_nodes] = {0.51, 0.82};
+        {  0.3, 0.12, 0.46,  -0.3, 0.6,
+         -0.12, 0.21, 0.38,  0.19, 0.46,
+          0.31, 0.12, 0.14,  0.21, 0.87};
+    float pdL_pdvals[output_nodes] = {0.51, 0.82, 0.12, 0.54, 0.42};
     float pdL_pdout_pred[input_nodes];
 
     float *devVec, *devMat, *devRes;
@@ -208,7 +207,7 @@ TEST_CASE( "matrix dotted with column vector", "[math]" ) {
     cudaMemcpy(pdL_pdout_pred, devRes, input_nodes * sizeof(float), cudaMemcpyDeviceToHost);
     cudaFree(devVec); cudaFree(devMat); cudaFree(devRes);
 
-    float expect[input_nodes] = {0.2514, 0.1110, 0.3496, 0.1936};
+    float expect[input_nodes] = {0.3966, 0.4524, 0.7521};
 
     for (int i = 0; i < input_nodes; ++i) {
         REQUIRE( fuzzy_equals_digits(pdL_pdout_pred[i], expect[i], 5) );
