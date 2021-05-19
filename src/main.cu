@@ -184,6 +184,8 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     bool save = false;
     if (load) {
         save = Tokens_match_at(toks, 3, "--save");
+    }
+    if (save) {
         printf("Model will be saved at the end of training.\n");
     }
     
@@ -191,9 +193,23 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     
     /** Layer 1: Conv2D Layer **/
 
-    // CONFIGURABLE
+    // Screenshots in presentation used this commented-out configuration below. 
+    /*
     int l1_in_rows = 64, l1_in_cols = 64;
     int l1_filters = 16;
+    int l1_kernel_rows = 5, l1_kernel_cols = 5;
+    int l1_stride_rows = 3, l1_stride_cols = 3;
+    int l1_activation = 1; // the code for ReLU
+    int l2_out_nodes = 128;
+    int l2_activation = 0; // the code for sigmoid
+    int l3_out_nodes = 15; // 15 classes to predict
+    int l3_activation = 2; // the code for none; no activation
+                           // the cross entropy is programmed to apply softmax activation
+    */
+
+    // CONFIGURABLE
+    int l1_in_rows = 64, l1_in_cols = 64;
+    int l1_filters = 32;
     int l1_kernel_rows = 5, l1_kernel_cols = 5;
     int l1_stride_rows = 3, l1_stride_cols = 3;
     int l1_activation = 1; // the code for ReLU
@@ -226,7 +242,7 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     /** Layer2: Dense Layer **/
 
     // CONFIGURABLE
-    int l2_out_nodes = 128;
+    int l2_out_nodes = 512;
     int l2_activation = 0; // the code for sigmoid
 
     // Input nodes depend on the previous layer
@@ -261,9 +277,22 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     int l3_in_nodes = l2_out_nodes;
     
     // The nodes need pre-activation vals and activated outs.
+    // Use page-locked memory for faster memcpy
+    
+   
+    float *l3_vals, *l3_outs, *l3_pdL_pdvals;
+    if (cudaMallocHost(&l3_vals, l3_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMallocHost(&l3_outs, l3_out_nodes * sizeof(float)) != cudaSuccess ||
+        cudaMallocHost(&l3_pdL_pdvals, l3_out_nodes * sizeof(float)) != cudaSuccess) {
+        printf("Error: Could not allocate page-locked host memory.\n");
+        return EXIT_FAILURE;
+    }
+    /*
     float *l3_vals =        (float*)malloc(l3_out_nodes * sizeof(float));
     float *l3_outs =        (float*)malloc(l3_out_nodes * sizeof(float));
     float *l3_pdL_pdvals =  (float*)malloc(l3_out_nodes * sizeof(float));
+    */
+    
     
     // Each out-node has a weight for each in-node
     float *l3_weights = (float*)malloc(l3_in_nodes * l3_out_nodes * sizeof(float));
@@ -280,18 +309,18 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         cudaMalloc(&dev_l3_pdL_pdvals, l3_out_nodes * sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dev_l3_weights, l3_in_nodes * l3_out_nodes * sizeof(float)) != cudaSuccess ||
         cudaMalloc(&dev_l3_grads, l3_in_nodes * l3_out_nodes * sizeof(float)) != cudaSuccess) {
-        printf("Could not allocate layer 3 memory on device.\n");
+        printf("Error: Could not allocate layer 3 memory on device.\n");
         return EXIT_FAILURE;
     }
 
     // Copy all data to device
     float *dev_data;
     if (cudaMalloc(&dev_data, 64 * 64 * 14999 * sizeof(float)) != cudaSuccess) {
-        printf("Error allocating memory for images on device.\n");
+        printf("Error: Could not allocate memory for images on device.\n");
         return EXIT_FAILURE;
     }
     if (cudaMemcpy(dev_data, data, 64 * 64 * 14999 * sizeof(float), cudaMemcpyHostToDevice) != cudaSuccess) {
-        printf("Error transferring images to device.\n");
+        printf("Error: Could not transfer images to device.\n");
         return EXIT_FAILURE;
     }
 
@@ -364,6 +393,8 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
         return EXIT_FAILURE;
     }
 
+    //cudaProfilerStart();
+
     struct timespec begin_time, end_time;
     clock_gettime(CLOCK_MONOTONIC_RAW, &begin_time);
 
@@ -411,12 +442,6 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
             printf("Error copying l3_vals back to host.\n");
             return EXIT_FAILURE;
         }
-
-        /* This doesn't need to be copied because it's just a working buffer for cat_cross_entropy()
-        if (cudaMemcpy(l3_outs, dev_l3_outs, l3_out_nodes * sizeof(float), cudaMemcpyDeviceToHost) != cudaSuccess) {
-            printf("Error copying l3_outs back to host.\n");
-            return EXIT_FAILURE;
-        }*/
         
         // categorical cross entropy loss with softmax activation
         cat_cross_entropy(
@@ -474,7 +499,7 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
 
         // Lower learning rate (alpha) over time.
         // Kind of like simulated annealing.
-        float alpha = 0.1 - (0.05 * (float)iter / (float)total_iters);
+        float alpha = 0.02 - (0.01 * (float)iter / (float)total_iters);
 
         // Update layer 1
         SGD_update_params(
@@ -530,6 +555,8 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
             clock_gettime(CLOCK_MONOTONIC_RAW, &begin_time);
         }
     }
+
+    //cudaProfilerStop();
     
     if (save) {
         // Copy all weights back to host
@@ -566,7 +593,7 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
 
     // Free host memory
     free(l1_weights); free(l2_weights); free(l3_weights);
-    free(l3_vals); free(l3_outs); free(l3_pdL_pdvals);
+    cudaFreeHost(l3_vals); cudaFreeHost(l3_outs); cudaFreeHost(l3_pdL_pdvals);
 
     // TODO: free device memory properly
     cudaFree(dev_data);
