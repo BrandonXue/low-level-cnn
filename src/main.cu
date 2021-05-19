@@ -220,6 +220,7 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     
     // Each filter has (kernel_rows * kernel_cols) weights and global gradient.
     float *l1_weights = (float*)malloc(l1_filters * l1_kernel_rows * l1_kernel_cols * sizeof(float));
+    printf("Layer 1 has %d trainable parameters.\n", l1_filters * l1_kernel_rows * l1_kernel_cols);
     // Random initialize weights
     random_init(l1_weights, l1_filters * l1_kernel_rows * l1_kernel_cols, 0, 1);
     
@@ -250,6 +251,7 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     
     // Each out-node has a weight for each in-node
     float *l2_weights = (float*)malloc(l2_in_nodes * l2_out_nodes * sizeof(float));
+    printf("Layer 2 has %d trainable parameters.\n", l2_in_nodes * l2_out_nodes);
     // Random initialize weights
     random_init(l2_weights, l2_in_nodes * l2_out_nodes, -1, 1);
 
@@ -296,6 +298,7 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
     
     // Each out-node has a weight for each in-node
     float *l3_weights = (float*)malloc(l3_in_nodes * l3_out_nodes * sizeof(float));
+    printf("Layer 3 has %d trainable parameters.\n", l3_in_nodes * l3_out_nodes);
     // Random initialize weights
     random_init(l3_weights, l3_in_nodes * l3_out_nodes, -1, 1);
 
@@ -499,7 +502,10 @@ int cmd_train(InputLabel *metadata, float *data, Tokens *toks) {
 
         // Lower learning rate (alpha) over time.
         // Kind of like simulated annealing.
-        float alpha = 0.02 - (0.01 * (float)iter / (float)total_iters);
+        //float alpha = 0.02 - (0.01 * (float)iter / (float)total_iters);
+
+        // FOR DEMO ONLY:
+        float alpha = 0.0005;
 
         // Update layer 1
         SGD_update_params(

@@ -183,7 +183,7 @@ void mat_vec_dot(float *out, float *A, int M, int N, float *v) {
 __global__
 void kernel_vmm_full(float *out, float *v, float *A, int N) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
-    int seg = blockIdx.y * blockDim.y + threadIdx.y;
+    int row_offset = (blockIdx.y * blockDim.y + threadIdx.y) * SEGMENT_SIZE;
 
     // each column is handled by multiple full segments
     if (col < N) {
@@ -192,7 +192,7 @@ void kernel_vmm_full(float *out, float *v, float *A, int N) {
         // "By default, the compiler unrolls small loops with a known trip count."
 #pragma unroll
         for (int seg_row = 0; seg_row < SEGMENT_SIZE; ++seg_row) {
-            int mat_row = seg * SEGMENT_SIZE + seg_row;
+            int mat_row = row_offset + seg_row;
             loc_sum += v[mat_row] * A[mat_row * N + col];
         }
 
