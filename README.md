@@ -60,7 +60,7 @@ I'm still learning about CNNs, and I have not taken any courses on deep learning
 ### Misc
 
 - Here is a short slide show presented for the High Performance Computing class that I took:
-- https://docs.google.com/presentation/d/1Vc6IWUTI6ZvKa9rwGm00YAWVQW1kl22JtiA7jIu-x9g/edit#slide=id.gd924a5d1f6_0_199
+- https://docs.google.com/presentation/d/1Vc6IWUTI6ZvKa9rwGm00YAWVQW1kl22JtiA7jIu-x9g/edit#slide=id.p
 
 
 ### Possible plans
