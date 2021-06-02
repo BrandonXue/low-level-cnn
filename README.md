@@ -3,6 +3,7 @@
 Author:
 Brandon Xue brandonx@csu.fullerton.edu
 
+
 ### Introduction
 This is a very basic convolutional neural network "from scratch", using lower level code such as the C programming language, and custom Cuda kernels.
 
@@ -35,6 +36,7 @@ I'm still learning about CNNs, and I have not taken any courses on deep learning
   - This larger network yielded up to 98% accuracy.
   - (But this accuracy is from the model predicting on training data. No train/test split, yet.)
 
+
 ### Dependencies and shoutouts
 
 - This project is written in C and Cuda, with some c++ dependencies.
@@ -53,6 +55,13 @@ I'm still learning about CNNs, and I have not taken any courses on deep learning
 - Unit tests were a lifesaver. I decided to use Catch2, an elegant and handy unit-testing (mainly) framework.
   - v2.13.6
   - https://github.com/catchorg/Catch2
+
+
+### Misc
+
+- Here is a short slide show presented for the High Performance Computing class that I took:
+- https://docs.google.com/presentation/d/1Vc6IWUTI6ZvKa9rwGm00YAWVQW1kl22JtiA7jIu-x9g/edit#slide=id.gd924a5d1f6_0_199
+
 
 ### Possible plans
 - Work needs to be done on convolutional layers.
