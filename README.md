@@ -45,7 +45,7 @@ I'm still learning about CNNs, and I have not taken any courses on deep learning
   - Cuda compilation tools V10.2.89
   - Test hardware: GeForce GTX TITAN X (Compute Capability 5.2)
 
-- The data set used for this project is the Chinese MNIST numbers dataset. This is similar to the classic MNIST numbers, but had a slightly smaller and higher usability score.
+- The data set used for this project is the Chinese MNIST numbers dataset. This is similar to the classic MNIST numbers, but was slightly smaller and had a higher usability score.
   - https://www.kaggle.com/gpreda/chinese-mnist
 
 - This project uses the wonderfully convenient stb_image.h single-header image library:
