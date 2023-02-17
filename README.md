@@ -1,7 +1,7 @@
 ## Low Level Convolutional Neural Network with Parallelism
 
 Author:
-Brandon Xue brandonx@csu.fullerton.edu
+Brandon
 
 
 ### Introduction
