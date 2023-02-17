@@ -8,7 +8,7 @@ Brandon
 This is a very basic convolutional neural network "from scratch", using lower level code such as the C programming language, and custom Cuda kernels.
 
 Motivations:\
-After discovering Keras in the previous fall term, I decided to deepen my understanding of deep learning by implementing a basic convolutional neural network from scratch. One thing I was dying to figure out was how to perform backpropagation without depending on some higher-level API. This project accomplishes that. Another reason for undertaking this project was to create an opportunity to practice Cuda programming, and to motivate the need for performance optimization. Last but not least, my professor, Dr. Bein, mentioned the massive speedup that could be achieved by using a GPU in deep learning tasks.
+After discovering Keras in the previous fall term, I decided to deepen my understanding of deep learning by implementing a basic convolutional neural network from scratch. One thing I was dying to figure out was how to perform backpropagation without depending on some higher-level API. This project accomplishes that. Another reason for undertaking this project was to create an opportunity to practice Cuda programming, and to motivate the need for performance optimization. Last but not least, my professor mentioned the massive speedup that could be achieved by using a GPU in deep learning tasks.
 
 Disclaimer:\
 I'm still learning about CNNs, and I have not taken any courses on deep learning. This project doesn't necessarily follow best practices; it is only a best-effort attempt.
@@ -69,5 +69,3 @@ I'm still learning about CNNs, and I have not taken any courses on deep learning
 - Trainable biases need to be implemented.
 - Revisit Cuda kernels and take benchmarks. Optimize as needed.
 - Add training optimizer, or change from stochastic gradient descent to batched or something.
-
-More coming soon...
